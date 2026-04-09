@@ -258,6 +258,7 @@ export async function getDashboardStats() {
   let totalRevenue = 0;
   const customerSet = new Set();
   const recentInvoices: any[] = [];
+  const recentQuotations: any[] = [];
   
   // Include offline stats natively
   const db = readOfflineDB();
@@ -278,6 +279,9 @@ export async function getDashboardStats() {
     totalRevenue += grandTotal;
     if (inv.billTo.name) customerSet.add(inv.billTo.name);
     recentInvoices.push({ id: inv.invoiceNo, date: inv.invoiceDate, customer: inv.billTo.name, amount: grandTotal });
+  }
+  for (const q of db.offlineQuotations) {
+    recentQuotations.push({ id: q.quotationNo, date: q.quotationDate, customer: q.billTo?.name || '', amount: 0 });
   }
 
   try {
@@ -300,18 +304,39 @@ export async function getDashboardStats() {
        }
     }
 
+    // Quotations sheet
+    try {
+      const quotSheet = doc.sheetsByTitle['Quotations'];
+      if (quotSheet) {
+        const qRows = await quotSheet.getRows();
+        for (let i = qRows.length - 1; i >= 0 && recentQuotations.length < 5; i--) {
+          const r = qRows[i];
+          const qNo = r.get('Quotation No') || '';
+          if (qNo) {
+            recentQuotations.push({
+              id: qNo,
+              date: r.get('Date') || '',
+              customer: r.get('Billed To') || '',
+              amount: parseFloat(r.get('Grand Total (₹)')) || 0
+            });
+          }
+        }
+      }
+    } catch {}
+
     // Deduplicate and sort descending
     const merged = recentInvoices.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 5);
+    const mergedQ = recentQuotations.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 5);
 
     return {
       success: true,
-      data: { totalRevenue, customers: customerSet.size, recentInvoices: merged }
+      data: { totalRevenue, customers: customerSet.size, recentInvoices: merged, recentQuotations: mergedQ }
     };
 
   } catch (error: any) {
     return { 
         success: true, 
-        data: { totalRevenue, customers: customerSet.size, recentInvoices: recentInvoices.slice(0, 5) },
+        data: { totalRevenue, customers: customerSet.size, recentInvoices: recentInvoices.slice(0, 5), recentQuotations: recentQuotations.slice(0, 5) },
         offline: true
     };
   }

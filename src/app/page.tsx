@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function Dashboard() {
   const result = await getDashboardStats();
-  const stats = result.success && result.data ? result.data : { totalRevenue: 0, customers: 0, recentInvoices: [] };
+  const stats = result.success && result.data ? result.data : { totalRevenue: 0, customers: 0, recentInvoices: [], recentQuotations: [] };
 
   return (
     <div className="h-full overflow-y-auto bg-slate-50 font-sans">
@@ -115,15 +115,41 @@ export default async function Dashboard() {
                 New Quotation <ArrowRight className="w-3 h-3" />
               </Link>
             </div>
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <div className="w-10 h-10 rounded-full bg-purple-50 flex items-center justify-center mb-3">
-                <Quote className="w-4 h-4 text-purple-400" />
+
+            {(!stats.recentQuotations || stats.recentQuotations.length === 0) ? (
+              <div className="flex flex-col items-center justify-center py-16 text-center">
+                <div className="w-10 h-10 rounded-full bg-purple-50 flex items-center justify-center mb-3">
+                  <Quote className="w-4 h-4 text-purple-400" />
+                </div>
+                <p className="text-sm text-slate-500 font-medium">No quotations yet.</p>
+                <Link href="/quotations/new" className="mt-3 text-xs font-semibold text-purple-600 bg-purple-50 hover:bg-purple-100 px-4 py-2 rounded-lg transition-colors">
+                  Create First Quotation
+                </Link>
               </div>
-              <p className="text-sm text-slate-500 font-medium">No quotations yet.</p>
-              <Link href="/quotations/new" className="mt-3 text-xs font-semibold text-purple-600 bg-purple-50 hover:bg-purple-100 px-4 py-2 rounded-lg transition-colors">
-                Create First Quotation
-              </Link>
-            </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                <div className="grid grid-cols-[100px_1fr_auto] gap-3 px-5 py-2 bg-slate-50/70 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  <span>Quotation No.</span>
+                  <span>Customer</span>
+                  <span className="text-right">Amount</span>
+                </div>
+                {stats.recentQuotations.map((q: any) => (
+                  <div key={q.id} className="grid grid-cols-[100px_1fr_auto] gap-3 items-center px-5 py-3 hover:bg-slate-50 transition-colors">
+                    <div>
+                      <span className="text-xs font-mono font-bold text-slate-700">#{q.id}</span>
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold text-slate-800 truncate">{q.customer}</div>
+                      <div className="text-xs text-slate-400">{q.date}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-bold text-slate-800">{q.amount > 0 ? `₹${q.amount.toLocaleString('en-IN')}` : '-'}</div>
+                      <span className="text-[10px] font-bold text-purple-600 bg-purple-50 border border-purple-100 px-1.5 py-0.5 rounded">QUOT</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
