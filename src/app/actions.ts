@@ -535,14 +535,151 @@ export async function getAllInvoicesForGST() {
   return allInvoices.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 }
 
-// ────────────────────── STAFF & PAYROLL ──────────────────────
-import { readStaffDB, writeStaffDB, StaffDBSchema } from '@/lib/staffDB';
+// \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 STAFF & PAYROLL (Google Sheets) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+import { StaffDBSchema } from '@/lib/staffDB';
 
-export async function getStaffData() {
-    return readStaffDB();
+// ---- Sheet helpers ----
+async function getOrCreateStaffSheet(doc: GoogleSpreadsheet, title: string, headers: string[]) {
+    let sheet = doc.sheetsByTitle[title];
+    if (!sheet) {
+        sheet = await doc.addSheet({ title, headerValues: headers });
+    }
+    return sheet;
 }
 
+// ---- READ from Google Sheets ----
+export async function getStaffData(): Promise<StaffDBSchema> {
+    const fallback: StaffDBSchema = {
+        settings: { enableReminder: true, reminderTime: '10:00', markPresentDefault: false, workingHours: { hrs: 8, mins: 0 }, weeklyOffs: ['Sun'] },
+        staff: [],
+        attendance: {}
+    };
+
+    try {
+        const doc = await getSheetSafely(6000);
+
+        // --- Settings ---
+        const settingsSheet = await getOrCreateStaffSheet(doc, 'StaffSettings', ['enableReminder', 'reminderTime', 'markPresentDefault', 'workingHoursHrs', 'workingHoursMins', 'weeklyOffs']);
+        const settingsRows = await settingsSheet.getRows();
+        if (settingsRows.length > 0) {
+            const r = settingsRows[0];
+            fallback.settings = {
+                enableReminder: r.get('enableReminder') === 'true',
+                reminderTime: r.get('reminderTime') || '10:00',
+                markPresentDefault: r.get('markPresentDefault') === 'true',
+                workingHours: {
+                    hrs: parseInt(r.get('workingHoursHrs')) || 8,
+                    mins: parseInt(r.get('workingHoursMins')) || 0
+                },
+                weeklyOffs: r.get('weeklyOffs') ? r.get('weeklyOffs').split(',') : ['Sun']
+            };
+        }
+
+        // --- Staff ---
+        const staffSheet = await getOrCreateStaffSheet(doc, 'Staff', ['id', 'name', 'mobile', 'monthlySalary']);
+        const staffRows = await staffSheet.getRows();
+        const staffList = staffRows.map(r => ({
+            id: r.get('id'),
+            name: r.get('name'),
+            mobile: r.get('mobile'),
+            monthlySalary: parseFloat(r.get('monthlySalary')) || 0,
+            advances: [] as { id: string; date: string; amount: number; description: string }[]
+        })).filter(s => s.id);
+
+        // --- Advances ---
+        const advSheet = await getOrCreateStaffSheet(doc, 'StaffAdvances', ['id', 'staffId', 'date', 'amount', 'description']);
+        const advRows = await advSheet.getRows();
+        for (const r of advRows) {
+            const sid = r.get('staffId');
+            const s = staffList.find(x => x.id === sid);
+            if (s) {
+                s.advances.push({
+                    id: r.get('id'),
+                    date: r.get('date'),
+                    amount: parseFloat(r.get('amount')) || 0,
+                    description: r.get('description') || ''
+                });
+            }
+        }
+        fallback.staff = staffList;
+
+        // --- Attendance ---
+        const attSheet = await getOrCreateStaffSheet(doc, 'Attendance', ['date', 'staffId', 'status', 'overtime']);
+        const attRows = await attSheet.getRows();
+        for (const r of attRows) {
+            const date = r.get('date');
+            const sid = r.get('staffId');
+            const status = r.get('status') || null;
+            const overtime = parseFloat(r.get('overtime')) || 0;
+            if (date && sid) {
+                if (!fallback.attendance[date]) fallback.attendance[date] = {};
+                fallback.attendance[date][sid] = { status, overtime };
+            }
+        }
+
+        return fallback;
+
+    } catch (err) {
+        console.error('getStaffData error (falling back to defaults):', err);
+        return fallback;
+    }
+}
+
+// ---- WRITE to Google Sheets ----
 export async function saveStaffData(data: StaffDBSchema) {
-    writeStaffDB(data);
-    return { success: true };
+    try {
+        const doc = await getSheetSafely(6000);
+
+        // --- Settings ---
+        const settingsSheet = await getOrCreateStaffSheet(doc, 'StaffSettings', ['enableReminder', 'reminderTime', 'markPresentDefault', 'workingHoursHrs', 'workingHoursMins', 'weeklyOffs']);
+        const existingSettings = await settingsSheet.getRows();
+        for (const r of existingSettings) await r.delete();
+        await settingsSheet.addRow({
+            enableReminder: String(data.settings.enableReminder),
+            reminderTime: data.settings.reminderTime,
+            markPresentDefault: String(data.settings.markPresentDefault),
+            workingHoursHrs: String(data.settings.workingHours.hrs),
+            workingHoursMins: String(data.settings.workingHours.mins),
+            weeklyOffs: (data.settings.weeklyOffs || []).join(',')
+        });
+
+        // --- Staff ---
+        const staffSheet = await getOrCreateStaffSheet(doc, 'Staff', ['id', 'name', 'mobile', 'monthlySalary']);
+        const existingStaff = await staffSheet.getRows();
+        for (const r of existingStaff) await r.delete();
+        for (const s of data.staff) {
+            await staffSheet.addRow({ id: s.id, name: s.name, mobile: s.mobile, monthlySalary: String(s.monthlySalary) });
+        }
+
+        // --- Advances ---
+        const advSheet = await getOrCreateStaffSheet(doc, 'StaffAdvances', ['id', 'staffId', 'date', 'amount', 'description']);
+        const existingAdv = await advSheet.getRows();
+        for (const r of existingAdv) await r.delete();
+        for (const s of data.staff) {
+            for (const adv of s.advances) {
+                await advSheet.addRow({ id: adv.id, staffId: s.id, date: adv.date, amount: String(adv.amount), description: adv.description });
+            }
+        }
+
+        // --- Attendance ---
+        const attSheet = await getOrCreateStaffSheet(doc, 'Attendance', ['date', 'staffId', 'status', 'overtime']);
+        const existingAtt = await attSheet.getRows();
+        for (const r of existingAtt) await r.delete();
+        for (const [date, staffMap] of Object.entries(data.attendance)) {
+            for (const [staffId, rec] of Object.entries(staffMap)) {
+                if (rec.status) {
+                    await attSheet.addRow({ date, staffId, status: rec.status || '', overtime: String(rec.overtime || 0) });
+                }
+            }
+        }
+
+        return { success: true };
+
+    } catch (err) {
+        console.error('saveStaffData error:', err);
+        // Fallback: write to local JSON as backup
+        const { writeStaffDB } = await import('@/lib/staffDB');
+        writeStaffDB(data);
+        return { success: false, fallback: true };
+    }
 }
