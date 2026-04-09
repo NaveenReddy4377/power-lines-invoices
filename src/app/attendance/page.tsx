@@ -296,7 +296,7 @@ function StaffDetailsOverlay({ staffId, db, onClose, saveData }: {staffId: strin
     });
 
     return (
-        <div className="fixed inset-0 bg-slate-100 z-50 flex flex-col overflow-hidden">
+        <div className="fixed inset-0 bg-slate-100 z-[200] flex flex-col overflow-hidden">
             <div className="flex h-full">
                 {/* Left Sidebar */}
                 <div className="w-64 bg-white border-r border-slate-200 flex flex-col shrink-0">
@@ -441,26 +441,31 @@ function StaffDetailsOverlay({ staffId, db, onClose, saveData }: {staffId: strin
 
                             return (
                             <div className="max-w-4xl p-8 bg-white border border-slate-200 rounded-lg shadow-sm">
-                                <div className="grid grid-cols-5 gap-3 mb-8">
-                                    <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl text-center shadow-sm">
+                                <div className="grid grid-cols-3 gap-4 mb-8">
+                                    <div className="bg-emerald-50 border border-emerald-200 p-5 rounded-xl text-center shadow-sm">
                                         <div className="text-xs font-bold text-emerald-600 mb-2">Present (P)</div>
                                         <div className="text-3xl font-black text-emerald-700">{P}</div>
                                     </div>
-                                    <div className="bg-red-50 border border-red-100 p-4 rounded-xl text-center shadow-sm">
+                                    <div className="bg-red-50 border border-red-100 p-5 rounded-xl text-center shadow-sm">
                                         <div className="text-xs font-bold text-red-600 mb-2">Absent (A)</div>
                                         <div className="text-3xl font-black text-red-700">{A}</div>
                                     </div>
-                                    <div className="bg-amber-50 border border-amber-100 p-4 rounded-xl text-center shadow-sm">
+                                    <div className="bg-amber-50 border border-amber-100 p-5 rounded-xl text-center shadow-sm">
                                         <div className="text-xs font-bold text-amber-600 mb-2">Half Day (HD)</div>
                                         <div className="text-3xl font-black text-amber-700">{HD}</div>
                                     </div>
-                                    <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl text-center shadow-sm">
-                                        <div className="text-xs font-bold text-blue-600 mb-2">Working Days</div>
-                                        <div className="text-3xl font-black text-blue-700">{workingDays}</div>
+
+                                    <div className="bg-blue-50 border border-blue-200 p-5 rounded-xl text-center shadow-sm flex flex-col justify-center">
+                                        <div className="text-xs font-bold text-blue-600 mb-1">{workingDays} Working Days</div>
+                                        <div className="text-2xl font-black text-blue-800">₹{grossPay.toLocaleString('en-IN', {maximumFractionDigits:0})} Earned</div>
                                     </div>
-                                    <div className="bg-orange-50 border border-orange-100 p-4 rounded-xl text-center shadow-sm">
-                                        <div className="text-xs font-bold text-orange-600 mb-2">Advance Bal</div>
-                                        <div className="text-2xl font-black text-orange-700">₹{advanceBalance.toLocaleString('en-IN')}</div>
+                                    <div className="bg-orange-50 border border-orange-200 p-5 rounded-xl text-center shadow-sm flex flex-col justify-center">
+                                        <div className="text-xs font-bold text-orange-600 mb-1">Advance Balance</div>
+                                        <div className="text-2xl font-black text-orange-800">- ₹{advanceBalance.toLocaleString('en-IN', {maximumFractionDigits:0})}</div>
+                                    </div>
+                                    <div className="bg-green-600 border border-green-700 p-5 rounded-xl text-center shadow-sm flex flex-col justify-center text-white">
+                                        <div className="text-xs font-bold text-green-100 mb-1">Final Net Payable</div>
+                                        <div className="text-3xl font-black text-white">₹{finalPay.toLocaleString('en-IN', {maximumFractionDigits:0})}</div>
                                     </div>
                                 </div>
 

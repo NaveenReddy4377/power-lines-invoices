@@ -78,7 +78,7 @@ export default function Sidebar() {
           {!collapsed && (
             <div className="flex-1 overflow-hidden transition-all duration-300">
               <div className="text-xs font-semibold text-slate-800 truncate">Naveen Reddy</div>
-              <div className="text-[10px] text-slate-500 truncate">Power Lines Electrical</div>
+              <div className="text-[10px] text-slate-500 truncate">Power Lines Electrical Works</div>
             </div>
           )}
         </div>
