@@ -1,24 +1,40 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import QuotationForm from '@/components/QuotationForm';
 import QuotationPreview from '@/components/QuotationPreview';
 import { QuotationData, initialQuotationData } from '@/types';
 import { Printer, Save, Loader2 } from 'lucide-react';
 import { saveQuotation, loadQuotation, getNextQuotationNumber } from '@/app/actions';
 
-export default function NewQuotation() {
+export default function NewQuotationPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-slate-100 bg-slate-950 h-full">Loading Quotation Mode...</div>}>
+      <NewQuotation />
+    </Suspense>
+  );
+}
+
+function NewQuotation() {
   const [data, setData] = useState<QuotationData>(initialQuotationData);
   const [isSaving, setIsSaving] = useState(false);
 
+  const searchParams = useSearchParams();
+  const editId = searchParams.get('edit');
+
   useEffect(() => {
     (async () => {
-      try {
-        const nextNo = await getNextQuotationNumber();
-        setData(prev => ({ ...prev, quotationNo: nextNo }));
-      } catch {}
+      if (editId) {
+        await handleLoad(editId);
+      } else {
+        try {
+          const nextNo = await getNextQuotationNumber();
+          setData(prev => ({ ...prev, quotationNo: nextNo }));
+        } catch {}
+      }
     })();
-  }, []);
+  }, [editId]);
 
   const handleLoad = async (quotationNo: string) => {
     try {

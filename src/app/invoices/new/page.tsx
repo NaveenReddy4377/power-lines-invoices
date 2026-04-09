@@ -1,26 +1,42 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import InvoiceForm from '@/components/InvoiceForm';
 import InvoicePreview from '@/components/InvoicePreview';
 import { InvoiceData, initialInvoiceData } from '@/types';
 import { Save, Printer, FileSpreadsheet } from 'lucide-react';
 import { saveToSpreadsheet, getNextInvoiceNumber } from '@/app/actions';
 
-export default function NewInvoice() {
+export default function NewInvoicePage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-slate-100 bg-slate-950 h-full">Loading...</div>}>
+      <NewInvoice />
+    </Suspense>
+  );
+}
+
+function NewInvoice() {
   const [data, setData] = useState<InvoiceData>(initialInvoiceData);
   const [isSaving, setIsSaving] = useState(false);
 
+  const searchParams = useSearchParams();
+  const editId = searchParams.get('edit');
+
   useEffect(() => {
     (async () => {
-      try {
-        const nextNo = await getNextInvoiceNumber();
-        setData(prev => ({ ...prev, invoiceNo: nextNo }));
-      } catch (err) {
-        console.error('Failed fetching next number:', err);
+      if (editId) {
+        await handleLoad(editId);
+      } else {
+        try {
+          const nextNo = await getNextInvoiceNumber();
+          setData(prev => ({ ...prev, invoiceNo: nextNo }));
+        } catch (err) {
+          console.error('Failed fetching next number:', err);
+        }
       }
     })();
-  }, []);
+  }, [editId]);
 
   const handleLoad = async (invoiceNo: string) => {
     try {

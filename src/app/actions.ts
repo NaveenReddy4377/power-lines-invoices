@@ -325,8 +325,8 @@ export async function getDashboardStats() {
     } catch {}
 
     // Deduplicate and sort descending
-    const merged = recentInvoices.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 5);
-    const mergedQ = recentQuotations.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 5);
+    const merged = recentInvoices.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const mergedQ = recentQuotations.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     return {
       success: true,
@@ -336,7 +336,7 @@ export async function getDashboardStats() {
   } catch (error: any) {
     return { 
         success: true, 
-        data: { totalRevenue, customers: customerSet.size, recentInvoices: recentInvoices.slice(0, 5), recentQuotations: recentQuotations.slice(0, 5) },
+        data: { totalRevenue, customers: customerSet.size, recentInvoices: recentInvoices, recentQuotations: recentQuotations },
         offline: true
     };
   }
