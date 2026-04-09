@@ -296,7 +296,7 @@ function StaffDetailsOverlay({ staffId, db, onClose, saveData }: {staffId: strin
     });
 
     return (
-        <div className="fixed inset-0 bg-slate-100 z-[200] flex flex-col overflow-hidden">
+        <div className="absolute inset-0 bg-slate-100 z-[200] flex flex-col overflow-hidden">
             <div className="flex h-full">
                 {/* Left Sidebar */}
                 <div className="w-64 bg-white border-r border-slate-200 flex flex-col shrink-0">
