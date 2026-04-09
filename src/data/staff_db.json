@@ -1,0 +1,82 @@
+{
+  "settings": {
+    "enableReminder": true,
+    "reminderTime": "10:00",
+    "markPresentDefault": false,
+    "workingHours": {
+      "hrs": 8,
+      "mins": 0
+    },
+    "weeklyOffs": [
+      "Sun"
+    ]
+  },
+  "staff": [
+    {
+      "id": "564e5f02-8ee0-481f-adcd-5ee3fdd621c4",
+      "name": "satish kumar",
+      "mobile": "9949823717",
+      "monthlySalary": 30000,
+      "advances": [
+        {
+          "id": "8962a8bc-bc3a-45e4-9496-22b2b9ae8ae6",
+          "date": "2026-04-09",
+          "amount": 0,
+          "description": "Opening Advance Balance"
+        }
+      ]
+    },
+    {
+      "id": "348eb76a-affa-40e1-8988-61d3a0fec9c0",
+      "name": "shiva kumar ",
+      "mobile": "7013346073",
+      "monthlySalary": 29000,
+      "advances": []
+    },
+    {
+      "id": "04718672-5505-420e-9b8a-3b03510cc1ff",
+      "name": "nagaraju ",
+      "mobile": "9676774370",
+      "monthlySalary": 16000,
+      "advances": []
+    },
+    {
+      "id": "ce70ba74-e344-476c-b91b-b41b2ac93c81",
+      "name": "ranjish",
+      "mobile": "7488149979",
+      "monthlySalary": 14000,
+      "advances": []
+    },
+    {
+      "id": "6f374f16-a7ca-4740-8dc2-a5a9b6bd1d6c",
+      "name": "devander",
+      "mobile": "7032674783",
+      "monthlySalary": 23000,
+      "advances": []
+    }
+  ],
+  "attendance": {
+    "2026-04-09": {
+      "564e5f02-8ee0-481f-adcd-5ee3fdd621c4": {
+        "status": "P",
+        "overtime": 0
+      },
+      "348eb76a-affa-40e1-8988-61d3a0fec9c0": {
+        "status": "P",
+        "overtime": 0
+      },
+      "04718672-5505-420e-9b8a-3b03510cc1ff": {
+        "status": "P",
+        "overtime": 0
+      },
+      "ce70ba74-e344-476c-b91b-b41b2ac93c81": {
+        "status": "P",
+        "overtime": 0
+      },
+      "6f374f16-a7ca-4740-8dc2-a5a9b6bd1d6c": {
+        "status": "P",
+        "overtime": 0
+      }
+    }
+  }
+}
