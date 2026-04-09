@@ -441,22 +441,26 @@ function StaffDetailsOverlay({ staffId, db, onClose, saveData }: {staffId: strin
 
                             return (
                             <div className="max-w-4xl p-8 bg-white border border-slate-200 rounded-lg shadow-sm">
-                                <div className="grid grid-cols-4 gap-4 mb-8">
-                                    <div className="bg-emerald-50 border border-emerald-100 p-5 rounded-xl text-center shadow-sm">
-                                        <div className="text-xs font-bold text-emerald-600 mb-2">Absent Days (A)</div>
-                                        <div className="text-3xl font-black text-emerald-800">{A}</div>
+                                <div className="grid grid-cols-5 gap-3 mb-8">
+                                    <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl text-center shadow-sm">
+                                        <div className="text-xs font-bold text-emerald-600 mb-2">Present (P)</div>
+                                        <div className="text-3xl font-black text-emerald-700">{P}</div>
                                     </div>
-                                    <div className="bg-amber-50 border border-amber-100 p-5 rounded-xl text-center shadow-sm">
+                                    <div className="bg-red-50 border border-red-100 p-4 rounded-xl text-center shadow-sm">
+                                        <div className="text-xs font-bold text-red-600 mb-2">Absent (A)</div>
+                                        <div className="text-3xl font-black text-red-700">{A}</div>
+                                    </div>
+                                    <div className="bg-amber-50 border border-amber-100 p-4 rounded-xl text-center shadow-sm">
                                         <div className="text-xs font-bold text-amber-600 mb-2">Half Day (HD)</div>
-                                        <div className="text-3xl font-black text-amber-800">{HD}</div>
+                                        <div className="text-3xl font-black text-amber-700">{HD}</div>
                                     </div>
-                                    <div className="bg-blue-50 border border-blue-100 p-5 rounded-xl text-center shadow-sm">
+                                    <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl text-center shadow-sm">
                                         <div className="text-xs font-bold text-blue-600 mb-2">Working Days</div>
-                                        <div className="text-3xl font-black text-blue-800">{workingDays}</div>
+                                        <div className="text-3xl font-black text-blue-700">{workingDays}</div>
                                     </div>
-                                    <div className="bg-red-50 border border-red-100 p-5 rounded-xl text-center shadow-sm">
-                                        <div className="text-xs font-bold text-red-600 mb-2">Advance Balance</div>
-                                        <div className="text-2xl font-black text-red-800">₹{advanceBalance.toLocaleString('en-IN')}</div>
+                                    <div className="bg-orange-50 border border-orange-100 p-4 rounded-xl text-center shadow-sm">
+                                        <div className="text-xs font-bold text-orange-600 mb-2">Advance Bal</div>
+                                        <div className="text-2xl font-black text-orange-700">₹{advanceBalance.toLocaleString('en-IN')}</div>
                                     </div>
                                 </div>
 
