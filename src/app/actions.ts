@@ -6,6 +6,13 @@ import fs from 'fs';
 import path from 'path';
 import { InvoiceData, QuotationData, Client, InventoryItem, DeliveryChallanData, CashBillData } from '@/types';
 import legacyCompanies from '@/data/companies.json';
+import {
+  syncInvoiceToSupabase,
+  syncCashBillToSupabase,
+  syncDeliveryChallanToSupabase,
+  syncQuotationToSupabase,
+  syncClientToSupabase,
+} from '@/lib/supabaseSync';
 
 // Helper to get or create a named sheet tab
 async function getOrCreateSheet(doc: GoogleSpreadsheet, title: string) {
@@ -229,6 +236,9 @@ export async function saveToSpreadsheet(data: InvoiceData) {
     } else {
       await sheet.addRow(rowObj);
     }
+
+    // Dual-write to Supabase in background
+    syncInvoiceToSupabase(data).catch(() => {});
 
     return { success: true };
   } catch (error: any) {
@@ -463,6 +473,9 @@ export async function saveQuotation(data: QuotationData) {
     } else {
       await sheet.addRow(rowObj);
     }
+
+    // Dual-write to Supabase in background
+    syncQuotationToSupabase(data).catch(() => {});
 
     return { success: true };
   } catch (error: any) {
@@ -851,6 +864,7 @@ export async function saveClient(client: Client) {
     } else {
       await sheet.addRow(data);
     }
+    syncClientToSupabase(client).catch(() => {});
     return { success: true };
   } catch (e: any) {
     console.error('saveClient error:', e);
@@ -1251,6 +1265,10 @@ export async function saveDeliveryChallanToSpreadsheet(data: DeliveryChallanData
     if (data.dcNo) {
       lastKnownDcNo = data.dcNo;
     }
+
+    // Dual-write to Supabase in background
+    syncDeliveryChallanToSupabase(data).catch(() => {});
+
     return { success: true, offline: false, error: undefined };
   } catch (error: any) {
     console.error('saveDeliveryChallanToSpreadsheet error:', error);
@@ -1372,6 +1390,10 @@ export async function saveCashBillToSpreadsheet(data: CashBillData) {
     if (data.billNo) {
       lastKnownCashBillNo = data.billNo;
     }
+
+    // Dual-write to Supabase in background
+    syncCashBillToSupabase(data).catch(() => {});
+
     return { success: true, offline: false, error: undefined };
   } catch (error: any) {
     console.error('saveCashBillToSpreadsheet error:', error);
