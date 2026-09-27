@@ -26,6 +26,7 @@ export default function DeliveryChallanPage() {
 }
 
 function DeliveryChallanContent() {
+  const [mounted, setMounted] = useState(false);
   const [data, setData] = useState<DeliveryChallanData>(initialDeliveryChallanData);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -45,6 +46,7 @@ function DeliveryChallanContent() {
   const hasInitializedRef = useRef<string | null>(null);
 
   useEffect(() => {
+    setMounted(true);
     // Replace the static placeholder item ID with a real UUID after hydration
     setData((prev) => ({
       ...prev,
@@ -340,6 +342,15 @@ function DeliveryChallanContent() {
       setIsDownloadingPdf(false);
     }
   };
+
+  if (!mounted) {
+    return (
+      <div className="h-full bg-slate-950 flex items-center justify-center text-amber-400 gap-2">
+        <Loader2 className="w-6 h-6 animate-spin" />
+        <span className="text-sm font-bold">Loading Delivery Challan...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full bg-slate-950 font-sans text-slate-100 flex flex-col selection:bg-amber-500/30">
