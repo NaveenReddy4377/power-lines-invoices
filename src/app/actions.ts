@@ -1288,12 +1288,34 @@ export async function getDeliveryChallanList() {
 
 export async function extractDCFromImage(base64Data: string, mimeType: string = 'image/jpeg') {
   try {
-    const rawKey = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+    let rawKey = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+    if (!rawKey) {
+      try {
+        const envPath = path.join(process.cwd(), '.env.local');
+        if (fs.existsSync(envPath)) {
+          const envContent = fs.readFileSync(envPath, 'utf8');
+          const match = envContent.match(/^GEMINI_API_KEY\s*=\s*(.+)$/m);
+          if (match) {
+            rawKey = match[1].trim();
+          }
+        }
+      } catch (e) {
+        // ignore fallback read error
+      }
+    }
+
     const apiKey = rawKey ? rawKey.trim().replace(/^["']|["']$/g, '') : '';
     if (!apiKey) {
       return {
         success: false,
-        error: 'GEMINI_API_KEY is not configured. Please set GEMINI_API_KEY in environment variables.'
+        error: 'GEMINI_API_KEY is not configured in .env.local. Please set GEMINI_API_KEY to enable AI OCR extraction.'
+      };
+    }
+
+    if (!apiKey.startsWith('AIzaSy')) {
+      return {
+        success: false,
+        error: `The configured GEMINI_API_KEY appears invalid (keys from Google AI Studio start with 'AIzaSy...'). Please generate a valid free API key from https://aistudio.google.com/app/apikey and add it to .env.local.`
       };
     }
 
