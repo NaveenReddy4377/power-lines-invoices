@@ -1312,13 +1312,6 @@ export async function extractDCFromImage(base64Data: string, mimeType: string = 
       };
     }
 
-    if (!apiKey.startsWith('AIzaSy')) {
-      return {
-        success: false,
-        error: `The configured GEMINI_API_KEY appears invalid (keys from Google AI Studio start with 'AIzaSy...'). Please generate a valid free API key from https://aistudio.google.com/app/apikey and add it to .env.local.`
-      };
-    }
-
     const cleanBase64 = base64Data.replace(/^data:[^;]+;base64,/, '');
 
     const promptText = `You are an expert OCR AI specializing in Indian industrial Delivery Challans, Returnable Gate Passes (RGP), and Gate Passes.
@@ -1351,17 +1344,20 @@ JSON schema requirement:
 
 Return ONLY raw valid JSON text.`;
 
-    const models = ['gemini-3.8-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+    const models = ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.5-flash', 'gemini-flash-latest'];
     let response: any = null;
     let lastError = '';
 
     for (const model of models) {
       try {
         const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
           {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': apiKey
+            },
             body: JSON.stringify({
               contents: [
                 {
