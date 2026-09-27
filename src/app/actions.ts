@@ -319,13 +319,23 @@ export async function getDashboardStats() {
       }
 
       if (invNo) {
+        const sumTot = parseFloat(r.get('Sum Total (₹)')) || (grandTotal > 0 ? Math.round((grandTotal / 1.18) * 100) / 100 : 0);
+        const cgstVal = parseFloat(r.get('CGST (₹)')) || (grandTotal > 0 ? Math.round(((grandTotal / 1.18) * 0.09) * 100) / 100 : 0);
+        const sgstVal = parseFloat(r.get('SGST (₹)')) || (grandTotal > 0 ? Math.round(((grandTotal / 1.18) * 0.09) * 100) / 100 : 0);
+
         recentInvoices.push({ 
           id: invNo, 
           date: date, 
           dueDate: parsedDueDate,
           customer: billedTo, 
           amount: grandTotal, 
-          status: r.get('Status') || 'Pending' 
+          status: r.get('Status') || 'Pending',
+          gstin: r.get('GSTIN') || '',
+          sumTotal: sumTot,
+          cgst: cgstVal,
+          sgst: sgstVal,
+          poNumber: r.get('PO Number') || '',
+          poDate: r.get('PO Date') || '',
         });
       }
     }
@@ -339,11 +349,22 @@ export async function getDashboardStats() {
           const r = qRows[i];
           const qNo = r.get('Quotation No') || '';
           if (qNo) {
+            const qGrandTotal = parseFloat(r.get('Grand Total (₹)')) || 0;
+            const qSumTot = Math.round((qGrandTotal / 1.18) * 100) / 100;
+            const qTax = Math.round((qSumTot * 0.09) * 100) / 100;
+
             recentQuotations.push({
               id: qNo,
               date: r.get('Date') || '',
+              validUntil: r.get('Valid Until') || '',
               customer: r.get('Billed To') || '',
-              amount: parseFloat(r.get('Grand Total (₹)')) || 0,
+              gstin: r.get('GSTIN') || '',
+              rgpNo: r.get('RGP No') || '',
+              rgpDate: r.get('RGP Date') || '',
+              amount: qGrandTotal,
+              sumTotal: qSumTot,
+              cgst: qTax,
+              sgst: qTax,
               status: r.get('Status') || 'Pending'
             });
           }
