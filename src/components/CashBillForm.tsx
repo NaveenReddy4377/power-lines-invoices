@@ -201,7 +201,7 @@ export default function CashBillForm({ data, onChange, onLoad, isLoading }: Prop
           </div>
         </div>
 
-        {/* Payment Status & Vehicle No */}
+        {/* Payment Status, Vehicle No, & Transaction Ref */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
           <div>
             <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
@@ -235,13 +235,41 @@ export default function CashBillForm({ data, onChange, onLoad, isLoading }: Prop
 
           <div>
             <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-              Vehicle / Reference No (Optional)
+              Vehicle / Transport No (Optional)
             </label>
             <input
               type="text"
               value={data.vehicleNo || ''}
               onChange={(e) => onChange({ ...data, vehicleNo: e.target.value })}
               placeholder="e.g. TS 08 AB 1234"
+              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-200 focus:outline-hidden focus:border-amber-500"
+            />
+          </div>
+
+          {data.paymentMode !== 'Cash' && (
+            <div>
+              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                Transaction / UTR / Cheque No.
+              </label>
+              <input
+                type="text"
+                value={data.transactionRef || ''}
+                onChange={(e) => onChange({ ...data, transactionRef: e.target.value })}
+                placeholder="e.g. UTR 42891924192 / Chq #48102"
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs font-mono text-slate-200 focus:outline-hidden focus:border-amber-500"
+              />
+            </div>
+          )}
+
+          <div className={data.paymentMode === 'Cash' ? 'sm:col-span-2' : ''}>
+            <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+              Motor / Job Specification (Optional)
+            </label>
+            <input
+              type="text"
+              value={data.motorDetails || ''}
+              onChange={(e) => onChange({ ...data, motorDetails: e.target.value })}
+              placeholder="e.g. 10 HP 1440 RPM Crompton Motor - Sl No: 48291"
               className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-200 focus:outline-hidden focus:border-amber-500"
             />
           </div>
@@ -567,6 +595,28 @@ export default function CashBillForm({ data, onChange, onLoad, isLoading }: Prop
               <span className="text-lg font-black text-amber-400">₹{grandTotal.toLocaleString('en-IN')}</span>
             </div>
           </div>
+        </div>
+
+        {/* Print Toggles for Bank & QR Code */}
+        <div className="pt-2 border-t border-slate-800 flex flex-wrap gap-4 text-xs">
+          <label className="flex items-center gap-2 cursor-pointer text-slate-300 hover:text-white select-none">
+            <input
+              type="checkbox"
+              checked={data.showBankDetails !== false}
+              onChange={(e) => onChange({ ...data, showBankDetails: e.target.checked })}
+              className="rounded-xs border-slate-700 bg-slate-900 text-amber-500 focus:ring-0 w-4 h-4 cursor-pointer"
+            />
+            <span>Print Bank Account Details (SBI)</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer text-slate-300 hover:text-white select-none">
+            <input
+              type="checkbox"
+              checked={data.showQrCode !== false}
+              onChange={(e) => onChange({ ...data, showQrCode: e.target.checked })}
+              className="rounded-xs border-slate-700 bg-slate-900 text-amber-500 focus:ring-0 w-4 h-4 cursor-pointer"
+            />
+            <span>Print Dynamic UPI Payment QR Code</span>
+          </label>
         </div>
       </div>
     </div>

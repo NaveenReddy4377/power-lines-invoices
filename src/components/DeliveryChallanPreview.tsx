@@ -25,8 +25,7 @@ export default function DeliveryChallanPreview({ data }: DeliveryChallanPreviewP
               </span>
             </div>
             <div className="text-right text-[11px] font-bold text-slate-800 leading-tight">
-              <div>Cell : 93953 17758</div>
-              <div>: 96767 74370</div>
+              <div>Cell: 93953 17758, 96767 74370</div>
             </div>
           </div>
 

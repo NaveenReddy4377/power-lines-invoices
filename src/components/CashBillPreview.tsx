@@ -37,8 +37,7 @@ export default function CashBillPreview({ data }: Props) {
               </span>
             </div>
             <div className="text-right text-[11px] font-bold text-slate-800 leading-tight">
-              <div>Cell: 93953 17758</div>
-              <div>: 96767 74370</div>
+              <div>Cell: 93953 17758, 96767 74370</div>
             </div>
           </div>
 
@@ -108,10 +107,26 @@ export default function CashBillPreview({ data }: Props) {
               </div>
             </div>
 
-            {data.vehicleNo && (
-              <div className="pt-1 text-[11px] flex items-center gap-2 border-t border-slate-200">
-                <span className="font-bold text-slate-900">Vehicle No:</span>
-                <span className="font-semibold text-slate-800">{data.vehicleNo}</span>
+            {(data.vehicleNo || data.transactionRef || data.motorDetails) && (
+              <div className="pt-2 mt-1 text-[11px] grid grid-cols-12 gap-2 border-t border-slate-200">
+                {data.vehicleNo && (
+                  <div className="col-span-4 flex items-center gap-1.5">
+                    <span className="font-bold text-slate-900">Vehicle No:</span>
+                    <span className="font-semibold text-slate-800">{data.vehicleNo}</span>
+                  </div>
+                )}
+                {data.transactionRef && (
+                  <div className="col-span-4 flex items-center gap-1.5">
+                    <span className="font-bold text-slate-900">Txn/UTR:</span>
+                    <span className="font-semibold text-slate-800 font-mono text-[10px]">{data.transactionRef}</span>
+                  </div>
+                )}
+                {data.motorDetails && (
+                  <div className="col-span-12 flex items-center gap-1.5">
+                    <span className="font-bold text-slate-900 min-w-[70px]">Job/Motor:</span>
+                    <span className="font-semibold text-blue-900">{data.motorDetails}</span>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -157,7 +172,7 @@ export default function CashBillPreview({ data }: Props) {
                 })}
 
                 {/* Blank Filler Rows for Professional Full A4 Print Look */}
-                {Array.from({ length: Math.max(0, 6 - data.items.length) }).map((_, fIdx) => (
+                {Array.from({ length: Math.max(0, 5 - data.items.length) }).map((_, fIdx) => (
                   <tr key={`filler-${fIdx}`} className="h-8">
                     <td className="border-r border-slate-300 p-2"></td>
                     <td className="border-r border-slate-300 p-2"></td>
@@ -204,35 +219,88 @@ export default function CashBillPreview({ data }: Props) {
           </div>
 
           {/* Amount In Words Banner */}
-          <div className="border border-slate-900 bg-slate-50 p-2.5 rounded-xs text-xs flex items-center justify-between">
+          <div className="border border-slate-900 bg-slate-50 p-2 rounded-xs text-xs flex items-center justify-between">
             <span className="font-bold text-slate-900">Amount in Words:</span>
             <span className="font-bold italic text-blue-950 text-right">
               {amountInWords}
             </span>
           </div>
+
+          {/* Payment & Bank Details + UPI QR Code Box */}
+          {(data.showBankDetails !== false || data.showQrCode !== false) && (
+            <div className="border-2 border-slate-900 rounded-sm p-2.5 bg-slate-50/70 grid grid-cols-12 gap-3 text-xs">
+              {/* Bank Details */}
+              <div className="col-span-7 space-y-1">
+                <div className="font-bold text-slate-900 uppercase text-[10px] tracking-wider border-b border-slate-300 pb-0.5 flex items-center justify-between">
+                  <span>Bank Details for NEFT / RTGS / IMPS:</span>
+                  <span className="text-[9px] font-mono text-emerald-800 font-semibold bg-emerald-100 px-1 rounded-xs">Verified A/C</span>
+                </div>
+                <div className="text-[10px] space-y-0.5 pt-0.5 text-slate-800">
+                  <div><strong className="text-slate-900">Bank:</strong> STATE BANK OF INDIA (IDA BOLLARAM)</div>
+                  <div><strong className="text-slate-900">A/C Name:</strong> POWER LINES ELECTRICAL WORKS</div>
+                  <div className="flex gap-4">
+                    <span><strong className="text-slate-900">A/C No:</strong> <span className="font-mono font-bold">43335667599</span></span>
+                    <span><strong className="text-slate-900">IFSC:</strong> <span className="font-mono font-bold">SBIN0018062</span></span>
+                  </div>
+                  <div><strong className="text-slate-900">UPI ID:</strong> <span className="font-mono font-bold text-blue-900">gadipallinaveenreddy-3@oksbi</span></div>
+                </div>
+              </div>
+
+              {/* UPI QR Code */}
+              <div className="col-span-5 flex items-center justify-end gap-2 border-l border-slate-300 pl-3">
+                <div className="text-right space-y-0.5">
+                  <div className="text-[10px] font-bold text-slate-900">Scan to Pay</div>
+                  <div className="text-[9px] font-mono text-emerald-700 font-bold">
+                    ₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </div>
+                  <div className="text-[8px] text-slate-500 font-medium">GPay • PhonePe • Paytm • BHIM</div>
+                </div>
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=upi://pay?pa=gadipallinaveenreddy-3@oksbi&pn=POWER%20LINES%20ELECTRICAL%20WORKS&am=${grandTotal}&cu=INR`}
+                  alt="UPI QR Code"
+                  width={68}
+                  height={68}
+                  style={{ width: '68px', height: '68px', minWidth: '68px', minHeight: '68px' }}
+                  className="border border-slate-900 p-0.5 bg-white mix-blend-multiply flex-shrink-0 rounded-xs"
+                />
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Document Footer: Terms & Signature */}
-        <div className="space-y-4 pt-4 border-t-2 border-slate-900 mt-6">
+        {/* Document Footer: Terms & Dual Signature */}
+        <div className="space-y-4 pt-3 border-t-2 border-slate-900 mt-4">
           <div className="grid grid-cols-12 gap-4 items-end">
             {/* Left: Terms & Conditions */}
-            <div className="col-span-7 text-[10px] text-slate-700 space-y-1">
+            <div className="col-span-5 text-[9px] text-slate-700 space-y-1">
               <span className="font-black text-slate-900 uppercase tracking-wider block">
                 Terms & Conditions:
               </span>
               <p className="whitespace-pre-line leading-relaxed font-medium">
                 {data.notes ||
-                  '1. Goods once sold will not be accepted back or exchanged without this original bill.\n2. Warranty on motor rewinding & repairs as per agreed company terms.\n3. Subject to Sangareddy/Hyderabad jurisdiction.'}
+                  '1. Goods once sold will not be accepted back or exchanged without this original bill.\n2. Warranty on motor rewinding & repairs as per standard terms.\n3. Subject to Sangareddy/Hyderabad jurisdiction.'}
               </p>
             </div>
 
+            {/* Middle: Customer / Receiver's Signature */}
+            <div className="col-span-3 text-center space-y-6">
+              <div className="text-[9px] text-slate-500 italic">
+                Goods/services received in good condition
+              </div>
+              <div className="pt-2">
+                <span className="inline-block border-t border-slate-900 px-3 text-[9px] font-bold text-slate-800 uppercase tracking-wider">
+                  Receiver's Signature
+                </span>
+              </div>
+            </div>
+
             {/* Right: Authorized Signature Stamp Area */}
-            <div className="col-span-5 text-right space-y-8">
-              <div className="text-[11px] font-black text-slate-900 uppercase">
+            <div className="col-span-4 text-right space-y-6">
+              <div className="text-[10px] font-black text-slate-900 uppercase">
                 For POWER LINES ELECTRICAL WORKS
               </div>
-              <div className="pt-6">
-                <span className="inline-block border-t border-slate-900 px-8 text-[10px] font-bold text-slate-800 uppercase tracking-widest">
+              <div className="pt-4">
+                <span className="inline-block border-t border-slate-900 px-6 text-[9px] font-bold text-slate-800 uppercase tracking-widest">
                   Authorised Signatory
                 </span>
               </div>
@@ -240,8 +308,8 @@ export default function CashBillPreview({ data }: Props) {
           </div>
 
           {/* Bottom Bar */}
-          <div className="text-center border-t border-slate-200 pt-2 text-[9px] font-bold text-slate-500 uppercase tracking-widest">
-            Thank you for your business! • This is a Cash Memo / Non-GST Estimate Bill
+          <div className="text-center border-t border-slate-200 pt-1.5 text-[8.5px] font-bold text-slate-500 uppercase tracking-widest">
+            Thank you for your business! • This is a Computer Generated Cash Memo / Non-GST Estimate
           </div>
         </div>
       </div>

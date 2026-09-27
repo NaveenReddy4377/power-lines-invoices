@@ -283,10 +283,14 @@ export interface CashBillData {
   billDate: string;
   paymentMode: 'Cash' | 'UPI' | 'Bank Transfer' | 'Cheque';
   paymentStatus: 'Paid' | 'Pending';
+  transactionRef?: string;
   customerName: string;
   customerPhone: string;
   customerAddress: string;
   vehicleNo?: string;
+  motorDetails?: string;
+  showBankDetails?: boolean;
+  showQrCode?: boolean;
   items: CashBillItem[];
   discount: number;
   notes: string;
@@ -298,10 +302,14 @@ export const initialCashBillData: CashBillData = {
   billDate: new Date().toISOString().split('T')[0],
   paymentMode: 'Cash',
   paymentStatus: 'Paid',
+  transactionRef: '',
   customerName: '',
   customerPhone: '',
   customerAddress: '',
   vehicleNo: '',
+  motorDetails: '',
+  showBankDetails: true,
+  showQrCode: true,
   items: [
     {
       id: 'cb-item-1',
@@ -313,7 +321,7 @@ export const initialCashBillData: CashBillData = {
     }
   ],
   discount: 0,
-  notes: '1. Goods once sold cannot be returned without bill.\n2. Warranty on motor rewinding & repairs as per standard terms.',
+  notes: '1. Goods once sold cannot be returned without bill.\n2. Warranty on motor rewinding & repairs as per standard terms.\n3. Subject to Sangareddy/Hyderabad jurisdiction.',
   status: 'Paid'
 };
 
