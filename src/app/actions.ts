@@ -1329,65 +1329,65 @@ JSON schema requirement:
 
 Return ONLY raw valid JSON text.`;
 
-    let response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                {
-                  inline_data: {
-                    mime_type: mimeType,
-                    data: cleanBase64
-                  }
-                },
-                { text: promptText }
-              ]
-            }
-          ]
-        })
-      }
-    );
+    const models = ['gemini-3.8-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+    let response: any = null;
+    let lastError = '';
 
-    if (!response.ok) {
-      response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [
-                  {
-                    inline_data: {
-                      mime_type: mimeType,
-                      data: cleanBase64
-                    }
-                  },
-                  { text: promptText }
-                ]
-              }
-            ]
-          })
+    for (const model of models) {
+      try {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [
+                {
+                  parts: [
+                    {
+                      inline_data: {
+                        mime_type: mimeType,
+                        data: cleanBase64
+                      }
+                    },
+                    { text: promptText }
+                  ]
+                }
+              ]
+            })
+          }
+        );
+
+        if (res.ok) {
+          response = res;
+          break;
+        } else {
+          lastError = await res.text();
         }
-      );
+      } catch (err: any) {
+        lastError = err.message;
+      }
     }
 
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Gemini API Error: ${errText}`);
+    if (!response || !response.ok) {
+      throw new Error(`Gemini API Error: ${lastError || 'Failed to call Gemini model'}`);
     }
 
     const resData = await response.json();
     const rawText = resData.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
     const cleanJsonStr = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
-    const jsonMatch = cleanJsonStr.match(/\{[\s\S]*\}/);
-    const jsonToParse = jsonMatch ? jsonMatch[0] : cleanJsonStr;
-    const extracted = JSON.parse(jsonToParse);
+
+    const arrayMatch = cleanJsonStr.match(/\[[\s\S]*\]/);
+    const objectMatch = cleanJsonStr.match(/\{[\s\S]*\}/);
+    let jsonToParse = cleanJsonStr;
+    if (arrayMatch && (!objectMatch || cleanJsonStr.indexOf('[') < cleanJsonStr.indexOf('{'))) {
+      jsonToParse = arrayMatch[0];
+    } else if (objectMatch) {
+      jsonToParse = objectMatch[0];
+    }
+
+    const parsed = JSON.parse(jsonToParse);
+    const extracted = Array.isArray(parsed) ? parsed[0] : parsed;
 
     return { success: true, data: extracted };
   } catch (error: any) {
