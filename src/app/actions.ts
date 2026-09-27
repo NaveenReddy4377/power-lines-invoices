@@ -1816,3 +1816,126 @@ export async function extractDCFromUrl(photoUrl: string) {
     return { success: false, error: error.message || 'Failed to extract document from URL' };
   }
 }
+
+export async function importExistingSheetsToSupabase() {
+  const summary = {
+    invoices: 0,
+    cashBills: 0,
+    challans: 0,
+    quotations: 0,
+    clients: 0,
+    errors: [] as string[]
+  };
+
+  try {
+    const doc = await getSheetSafely(10000);
+
+    // 1. Sync Invoices from Sheet 1
+    const invSheet = doc.sheetsByIndex[0];
+    if (invSheet) {
+      try {
+        const rows = await invSheet.getRows();
+        for (const r of rows) {
+          const raw = r.get('RawData');
+          if (raw) {
+            try {
+              const data = JSON.parse(raw);
+              await syncInvoiceToSupabase(data);
+              summary.invoices++;
+            } catch (e) {}
+          }
+        }
+      } catch (e: any) {
+        summary.errors.push(`Invoices tab: ${e.message}`);
+      }
+    }
+
+    // 2. Sync Cash Bills
+    const cbSheet = doc.sheetsByTitle['Cash Bills'];
+    if (cbSheet) {
+      try {
+        const rows = await cbSheet.getRows();
+        for (const r of rows) {
+          const raw = r.get('RawData');
+          if (raw) {
+            try {
+              const data = JSON.parse(raw);
+              await syncCashBillToSupabase(data);
+              summary.cashBills++;
+            } catch (e) {}
+          }
+        }
+      } catch (e: any) {
+        summary.errors.push(`Cash Bills tab: ${e.message}`);
+      }
+    }
+
+    // 3. Sync Delivery Challans
+    const dcSheet = doc.sheetsByTitle['Delivery Challans'];
+    if (dcSheet) {
+      try {
+        const rows = await dcSheet.getRows();
+        for (const r of rows) {
+          const raw = r.get('RawData');
+          if (raw) {
+            try {
+              const data = JSON.parse(raw);
+              await syncDeliveryChallanToSupabase(data);
+              summary.challans++;
+            } catch (e) {}
+          }
+        }
+      } catch (e: any) {
+        summary.errors.push(`Challans tab: ${e.message}`);
+      }
+    }
+
+    // 4. Sync Quotations
+    const qSheet = doc.sheetsByTitle['Quotations'];
+    if (qSheet) {
+      try {
+        const rows = await qSheet.getRows();
+        for (const r of rows) {
+          const raw = r.get('RawData');
+          if (raw) {
+            try {
+              const data = JSON.parse(raw);
+              await syncQuotationToSupabase(data);
+              summary.quotations++;
+            } catch (e) {}
+          }
+        }
+      } catch (e: any) {
+        summary.errors.push(`Quotations tab: ${e.message}`);
+      }
+    }
+
+    // 5. Sync Clients
+    const clSheet = doc.sheetsByTitle['Clients'];
+    if (clSheet) {
+      try {
+        const rows = await clSheet.getRows();
+        for (const r of rows) {
+          const name = r.get('Name');
+          if (name) {
+            await syncClientToSupabase({
+              id: r.get('ID') || crypto.randomUUID(),
+              name: name.trim(),
+              gstin: r.get('GSTIN') || '',
+              address: r.get('Address') || '',
+              placeOfSupply: r.get('PlaceOfSupply') || 'Telangana'
+            });
+            summary.clients++;
+          }
+        }
+      } catch (e: any) {
+        summary.errors.push(`Clients tab: ${e.message}`);
+      }
+    }
+
+    return { success: true, summary };
+  } catch (error: any) {
+    return { success: false, error: error.message, summary };
+  }
+}
+
