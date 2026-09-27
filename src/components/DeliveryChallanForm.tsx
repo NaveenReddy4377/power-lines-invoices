@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { DeliveryChallanData, DeliveryChallanItem, Client } from '@/types';
-import { extractDCFromImage, extractDCFromUrl, getClients, uploadRGPPhoto } from '@/app/actions';
-import { Upload, Sparkles, Plus, Trash2, Building, Truck, FileText, Loader2, CheckCircle2, AlertCircle, Image as ImageIcon, ExternalLink } from 'lucide-react';
+import { extractDCFromImage, extractDCFromUrl, getClients, uploadRGPPhoto, getPreviousDescriptions, DescriptionSuggestion } from '@/app/actions';
+import { Upload, Sparkles, Plus, Trash2, Building, Truck, FileText, Loader2, CheckCircle2, AlertCircle, Image as ImageIcon, ExternalLink, History } from 'lucide-react';
 
 interface DeliveryChallanFormProps {
   data: DeliveryChallanData;
@@ -19,6 +19,10 @@ export default function DeliveryChallanForm({ data, onChange, onLoad, isLoading 
   const [extractSuccess, setExtractSuccess] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
   const [showClientDropdown, setShowClientDropdown] = useState(false);
+  const [suggestions, setSuggestions] = useState<DescriptionSuggestion[]>([]);
+  const [activeDescId, setActiveDescId] = useState<string | null>(null);
+  const [descSearch, setDescSearch] = useState<string>('');
+  const descDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     async function loadCRM() {
@@ -30,7 +34,31 @@ export default function DeliveryChallanForm({ data, onChange, onLoad, isLoading 
       }
     }
     loadCRM();
+    getPreviousDescriptions().then(setSuggestions).catch(() => {});
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (descDropdownRef.current && !descDropdownRef.current.contains(e.target as Node)) {
+        setActiveDescId(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  const selectSuggestion = (itemId: string, s: DescriptionSuggestion) => {
+    const updatedItems = data.items.map(item => {
+      if (item.id === itemId) {
+        return {
+          ...item,
+          description: s.description,
+          uom: s.unit || item.uom || 'NOS'
+        };
+      }
+      return item;
+    });
+    onChange({ ...data, items: updatedItems });
+    setActiveDescId(null);
+  };
 
   const handleFieldChange = (field: keyof DeliveryChallanData, value: any) => {
     onChange({ ...data, [field]: value });
@@ -610,14 +638,84 @@ export default function DeliveryChallanForm({ data, onChange, onLoad, isLoading 
                   />
                 </div>
 
-                <div className="sm:col-span-5">
+                <div className="sm:col-span-5 relative">
                   <input
                     type="text"
                     placeholder="Description (e.g. 18kW Stand mine motor / rewinding motor)"
                     value={item.description}
-                    onChange={(e) => handleItemChange(item.id, 'description', e.target.value)}
+                    onChange={(e) => {
+                      handleItemChange(item.id, 'description', e.target.value);
+                      setDescSearch(e.target.value);
+                      setActiveDescId(item.id);
+                    }}
+                    onFocus={() => {
+                      setActiveDescId(item.id);
+                      setDescSearch(item.description || '');
+                    }}
                     className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded text-xs font-semibold text-slate-200 focus:outline-none focus:border-amber-500"
                   />
+
+                  {/* Auto-suggestions dropdown */}
+                  {activeDescId === item.id && (() => {
+                    const query = (descSearch || '').trim().toLowerCase();
+                    const filtered = suggestions.filter(s =>
+                      s.description.toLowerCase().includes(query)
+                    ).slice(0, 7);
+
+                    if (filtered.length === 0) return null;
+
+                    return (
+                      <div
+                        ref={descDropdownRef}
+                        className="absolute z-30 left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden divide-y divide-slate-800/80 animate-in fade-in zoom-in-95 duration-100"
+                      >
+                        <div className="p-1.5 bg-slate-950/80 text-[10px] font-bold text-amber-400 uppercase tracking-wider flex items-center justify-between">
+                          <span className="flex items-center gap-1.5">
+                            <History className="w-3 h-3 text-amber-500" />
+                            Previous Entries & Suggestions
+                          </span>
+                          <button
+                            type="button"
+                            onMouseDown={() => setActiveDescId(null)}
+                            className="text-slate-400 hover:text-slate-200 text-xs px-1"
+                          >
+                            ✕
+                          </button>
+                        </div>
+
+                        <div className="max-h-52 overflow-y-auto">
+                          {filtered.map((s, si) => (
+                            <div
+                              key={`dc-sug-${si}`}
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                selectSuggestion(item.id, s);
+                              }}
+                              className="px-3 py-2 cursor-pointer hover:bg-amber-500/10 transition-colors flex items-center justify-between text-xs group"
+                            >
+                              <div className="flex-1 pr-2">
+                                <p className="font-semibold text-slate-100 group-hover:text-amber-300 transition-colors">
+                                  {s.description}
+                                </p>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  {s.source && (
+                                    <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-xs bg-slate-800 text-slate-400 border border-slate-700">
+                                      {s.source}
+                                    </span>
+                                  )}
+                                  {s.unit && (
+                                    <span className="text-[10px] text-slate-500">
+                                      UOM: <strong className="text-slate-400">{s.unit}</strong>
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div className="sm:col-span-2">

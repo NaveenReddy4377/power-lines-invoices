@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { CashBillData, CashBillItem, Client, InventoryItem } from '@/types';
-import { Plus, Trash2, User, Phone, MapPin, IndianRupee, CreditCard, CheckCircle2, Search, FileText, ArrowRight } from 'lucide-react';
-import { getClients, getInventory } from '@/app/actions';
+import { Plus, Trash2, User, Phone, MapPin, IndianRupee, CreditCard, CheckCircle2, Search, FileText, ArrowRight, History, Sparkles } from 'lucide-react';
+import { getClients, getInventory, getPreviousDescriptions, DescriptionSuggestion } from '@/app/actions';
 
 interface Props {
   data: CashBillData;
@@ -15,13 +15,26 @@ interface Props {
 export default function CashBillForm({ data, onChange, onLoad, isLoading }: Props) {
   const [clients, setClients] = useState<Client[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [suggestions, setSuggestions] = useState<DescriptionSuggestion[]>([]);
+  const [activeDescIdx, setActiveDescIdx] = useState<number | null>(null);
+  const [descSearch, setDescSearch] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState(data.customerName || '');
   const [showDropdown, setShowDropdown] = useState(false);
   const [loadBillInput, setLoadBillInput] = useState(data.billNo || '');
+  const descDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     getClients().then(setClients).catch(() => {});
     getInventory().then(setInventory).catch(() => {});
+    getPreviousDescriptions().then(setSuggestions).catch(() => {});
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (descDropdownRef.current && !descDropdownRef.current.contains(e.target as Node)) {
+        setActiveDescIdx(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   useEffect(() => {
@@ -46,6 +59,22 @@ export default function CashBillForm({ data, onChange, onLoad, isLoading }: Prop
       customerAddress: client.address || data.customerAddress
     });
     setShowDropdown(false);
+  };
+
+  const selectSuggestion = (idx: number, s: DescriptionSuggestion) => {
+    const next = [...data.items];
+    const current = { ...next[idx] };
+    current.description = s.description;
+    if (s.rate !== undefined && s.rate > 0) {
+      current.rate = s.rate;
+    }
+    if (s.unit) {
+      current.unit = s.unit;
+    }
+    current.amount = Math.round(Number(current.quantity || 1) * Number(current.rate || 0) * 100) / 100;
+    next[idx] = current;
+    onChange({ ...data, items: next });
+    setActiveDescIdx(null);
   };
 
   const handleAddItem = () => {
@@ -346,15 +375,94 @@ export default function CashBillForm({ data, onChange, onLoad, isLoading }: Prop
               </div>
 
               <div className="grid grid-cols-12 gap-2">
-                {/* Description */}
-                <div className="col-span-12 sm:col-span-6">
+                {/* Description with Auto-Suggestions */}
+                <div className="col-span-12 sm:col-span-6 relative">
                   <input
                     type="text"
                     value={item.description}
-                    onChange={(e) => handleItemChange(idx, 'description', e.target.value)}
-                    placeholder="Description (e.g. 5 HP Motor Rewinding / Copper Wire / Bearing replacement)"
+                    onChange={(e) => {
+                      handleItemChange(idx, 'description', e.target.value);
+                      setDescSearch(e.target.value);
+                      setActiveDescIdx(idx);
+                    }}
+                    onFocus={() => {
+                      setActiveDescIdx(idx);
+                      setDescSearch(item.description || '');
+                    }}
+                    placeholder="Description (e.g. 5 HP Motor Rewinding / Bearing replacement)"
                     className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-100 placeholder-slate-600 focus:outline-hidden focus:border-amber-500"
                   />
+
+                  {/* Previous Entries Auto-Suggestions Dropdown */}
+                  {activeDescIdx === idx && (() => {
+                    const query = (descSearch || '').trim().toLowerCase();
+                    const filtered = suggestions.filter(s =>
+                      s.description.toLowerCase().includes(query)
+                    ).slice(0, 7);
+
+                    if (filtered.length === 0) return null;
+
+                    return (
+                      <div
+                        ref={descDropdownRef}
+                        className="absolute z-30 left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden divide-y divide-slate-800/80 animate-in fade-in zoom-in-95 duration-100"
+                      >
+                        <div className="p-1.5 bg-slate-950/70 text-[10px] font-bold text-amber-400 uppercase tracking-wider flex items-center justify-between">
+                          <span className="flex items-center gap-1.5">
+                            <History className="w-3 h-3 text-amber-500" />
+                            Previous Entries & Suggestions
+                          </span>
+                          <button
+                            type="button"
+                            onMouseDown={() => setActiveDescIdx(null)}
+                            className="text-slate-400 hover:text-slate-200 text-xs px-1"
+                          >
+                            ✕
+                          </button>
+                        </div>
+
+                        <div className="max-h-52 overflow-y-auto">
+                          {filtered.map((s, si) => (
+                            <div
+                              key={`sug-${si}`}
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                selectSuggestion(idx, s);
+                              }}
+                              className="px-3 py-2 cursor-pointer hover:bg-amber-500/10 transition-colors flex items-center justify-between text-xs group"
+                            >
+                              <div className="flex-1 pr-2">
+                                <p className="font-semibold text-slate-100 group-hover:text-amber-300 transition-colors">
+                                  {s.description}
+                                </p>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  {s.source && (
+                                    <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-xs bg-slate-800 text-slate-400 border border-slate-700">
+                                      {s.source}
+                                    </span>
+                                  )}
+                                  {s.unit && (
+                                    <span className="text-[10px] text-slate-500">
+                                      Unit: <strong className="text-slate-400">{s.unit}</strong>
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {s.rate !== undefined && s.rate > 0 && (
+                                <div className="text-right shrink-0">
+                                  <span className="text-xs font-bold text-emerald-400 font-mono">
+                                    ₹{s.rate.toLocaleString('en-IN')}
+                                  </span>
+                                  <span className="block text-[9px] text-slate-500 font-medium">Auto-fill Rate</span>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Qty */}

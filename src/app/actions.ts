@@ -1468,6 +1468,165 @@ export async function getCashBillList() {
   return list;
 }
 
+export interface DescriptionSuggestion {
+  description: string;
+  rate?: number;
+  unit?: string;
+  hsn?: string;
+  source?: string;
+}
+
+const COMMON_ELECTRICAL_DESCRIPTIONS: DescriptionSuggestion[] = [
+  { description: "Rewinding of 5 HP LT Horizontal Foot Mounted Induction Motor", rate: 4500, unit: "NOS", source: "Catalog" },
+  { description: "Rewinding of 10 HP 3 Phase 415V 1440 RPM Induction Motor", rate: 8500, unit: "NOS", source: "Catalog" },
+  { description: "Rewinding of 15 HP 3 Phase 415V 2900 RPM Induction Motor", rate: 12000, unit: "NOS", source: "Catalog" },
+  { description: "Rewinding of 20 HP 3 Phase LT Motor with Dual Coat Copper Wire", rate: 16500, unit: "NOS", source: "Catalog" },
+  { description: "Rewinding of 3 HP Single Phase Submersible Pump Motor", rate: 3800, unit: "NOS", source: "Catalog" },
+  { description: "Rewinding of 7.5 HP Flange Mounted FLP Electric Motor", rate: 7200, unit: "NOS", source: "Catalog" },
+  { description: "Replacement of Drive End & Non-Drive End Ball Bearings (SKF/FAG)", rate: 2200, unit: "SET", source: "Catalog" },
+  { description: "Dynamic Rotor Balancing & Vibration Testing", rate: 1500, unit: "NOS", source: "Catalog" },
+  { description: "Rotor Shaft Machining, Metal Spraying & Grinding", rate: 2800, unit: "NOS", source: "Catalog" },
+  { description: "End Cover Housing Bushing & Precision Boring", rate: 1800, unit: "NOS", source: "Catalog" },
+  { description: "Cooling Fan & Cast Iron Fan Cover Replacement", rate: 1400, unit: "NOS", source: "Catalog" },
+  { description: "Replacement of 6-Pin Brass Terminal Block with Gland", rate: 850, unit: "NOS", source: "Catalog" },
+  { description: "Stator Core Cleaning, Class H Varnishing & Oven Baking", rate: 1800, unit: "JOB", source: "Catalog" },
+  { description: "Control Panel Contactor, Relay & Wiring Servicing", rate: 3500, unit: "JOB", source: "Catalog" }
+];
+
+export async function getPreviousDescriptions(): Promise<DescriptionSuggestion[]> {
+  const map = new Map<string, DescriptionSuggestion>();
+
+  // Add catalog defaults first
+  COMMON_ELECTRICAL_DESCRIPTIONS.forEach(item => {
+    map.set(item.description.toLowerCase(), item);
+  });
+
+  try {
+    const doc = await getSheetSafely(5000);
+
+    // 1. Scan Cash Bills tab
+    const cbSheet = doc.sheetsByTitle['Cash Bills'];
+    if (cbSheet) {
+      try {
+        const rows = await cbSheet.getRows();
+        rows.slice(-150).forEach(r => {
+          const raw = r.get('RawData');
+          if (raw) {
+            try {
+              const data = JSON.parse(raw);
+              if (Array.isArray(data.items)) {
+                data.items.forEach((item: any) => {
+                  const desc = (item.description || item.name || '').trim();
+                  if (desc) {
+                    map.set(desc.toLowerCase(), {
+                      description: desc,
+                      rate: Number(item.rate || item.price) || undefined,
+                      unit: item.unit || item.quantityUnit || 'NOS',
+                      source: 'Cash Bill'
+                    });
+                  }
+                });
+              }
+            } catch (e) {}
+          }
+        });
+      } catch (e) {}
+    }
+
+    // 2. Scan Delivery Challans tab
+    const dcSheet = doc.sheetsByTitle['Delivery Challans'];
+    if (dcSheet) {
+      try {
+        const rows = await dcSheet.getRows();
+        rows.slice(-150).forEach(r => {
+          const raw = r.get('RawData');
+          if (raw) {
+            try {
+              const data = JSON.parse(raw);
+              if (Array.isArray(data.items)) {
+                data.items.forEach((item: any) => {
+                  const desc = (item.description || item.name || '').trim();
+                  if (desc) {
+                    map.set(desc.toLowerCase(), {
+                      description: desc,
+                      rate: Number(item.rate || item.price) || undefined,
+                      unit: item.uom || item.unit || 'NOS',
+                      source: 'Challan'
+                    });
+                  }
+                });
+              }
+            } catch (e) {}
+          }
+        });
+      } catch (e) {}
+    }
+
+    // 3. Scan Invoices (Sheet 1)
+    const invSheet = doc.sheetsByIndex[0];
+    if (invSheet) {
+      try {
+        const rows = await invSheet.getRows();
+        rows.slice(-150).forEach(r => {
+          const raw = r.get('RawData');
+          if (raw) {
+            try {
+              const data = JSON.parse(raw);
+              if (Array.isArray(data.items)) {
+                data.items.forEach((item: any) => {
+                  const desc = (item.name || item.description || '').trim();
+                  if (desc) {
+                    map.set(desc.toLowerCase(), {
+                      description: desc,
+                      rate: Number(item.price || item.rate) || undefined,
+                      unit: item.quantityUnit || item.unit || 'NOS',
+                      hsn: item.hsn,
+                      source: 'Invoice'
+                    });
+                  }
+                });
+              }
+            } catch (e) {}
+          }
+        });
+      } catch (e) {}
+    }
+
+    // 4. Scan Quotations tab
+    const qSheet = doc.sheetsByTitle['Quotations'];
+    if (qSheet) {
+      try {
+        const rows = await qSheet.getRows();
+        rows.slice(-150).forEach(r => {
+          const raw = r.get('RawData');
+          if (raw) {
+            try {
+              const data = JSON.parse(raw);
+              if (Array.isArray(data.items)) {
+                data.items.forEach((item: any) => {
+                  const desc = (item.name || item.description || '').trim();
+                  if (desc) {
+                    map.set(desc.toLowerCase(), {
+                      description: desc,
+                      rate: Number(item.price || item.rate) || undefined,
+                      unit: item.quantityUnit || item.unit || 'NOS',
+                      source: 'Quotation'
+                    });
+                  }
+                });
+              }
+            } catch (e) {}
+          }
+        });
+      } catch (e) {}
+    }
+  } catch (err) {
+    console.warn('getPreviousDescriptions error:', err);
+  }
+
+  return Array.from(map.values());
+}
+
 export async function extractDCFromImage(base64Data: string, mimeType: string = 'image/jpeg') {
   try {
     let rawKey = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;

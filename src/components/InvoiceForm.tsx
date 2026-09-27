@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { InvoiceData, Client, InventoryItem } from '@/types';
-import { Plus, Trash2, Building, ScanLine, FileText, IndianRupee, Zap, Sparkles, Loader2 } from 'lucide-react';
-import { getClients, getInventory } from '@/app/actions';
+import { Plus, Trash2, Building, ScanLine, FileText, IndianRupee, Zap, Sparkles, Loader2, History } from 'lucide-react';
+import { getClients, getInventory, getPreviousDescriptions, DescriptionSuggestion } from '@/app/actions';
 import { getMotorSuggestions, findMotorPrice, approvedCompanies } from '@/data/motor-rates';
 
 interface Props {
@@ -18,6 +18,7 @@ export default function InvoiceForm({ data, onChange, onLoad, isLoading }: Props
   const [showDropdown, setShowDropdown] = useState(false);
   const [clients, setClients] = useState<Client[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [previousSuggestions, setPreviousSuggestions] = useState<DescriptionSuggestion[]>([]);
   const [activeItemIdx, setActiveItemIdx] = useState<number | null>(null);
   const [itemSearch, setItemSearch] = useState<string>('');
   const itemDropdownRef = useRef<HTMLDivElement>(null);
@@ -25,6 +26,7 @@ export default function InvoiceForm({ data, onChange, onLoad, isLoading }: Props
   useEffect(() => {
     getClients().then(setClients).catch(() => {});
     getInventory().then(setInventory).catch(() => {});
+    getPreviousDescriptions().then(setPreviousSuggestions).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -280,77 +282,127 @@ export default function InvoiceForm({ data, onChange, onLoad, isLoading }: Props
                   }} 
                 />
                 {activeItemIdx === index && (() => {
+                  const query = (itemSearch || '').trim().toLowerCase();
                   const motorList = getMotorSuggestions(itemSearch);
                   const invList = inventory.filter(s =>
-                    s.name.toLowerCase().includes(itemSearch.toLowerCase()) && s.name.toLowerCase() !== itemSearch.toLowerCase()
+                    s.name.toLowerCase().includes(query) && s.name.toLowerCase() !== query
                   ).slice(0, 5);
+                  const prevList = previousSuggestions.filter(s =>
+                    s.description.toLowerCase().includes(query) &&
+                    !motorList.some(m => m.name.toLowerCase() === s.description.toLowerCase())
+                  ).slice(0, 7);
 
-                  if (motorList.length === 0 && invList.length === 0) return null;
+                  if (motorList.length === 0 && invList.length === 0 && prevList.length === 0) return null;
 
                   return (
-                    <div className="absolute z-20 left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded-md shadow-2xl max-h-60 overflow-auto no-scrollbar divide-y divide-slate-800">
-                      {motorList.length > 0 && (
-                        <div className="p-1.5 bg-amber-500/5 text-[10px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
-                          <Sparkles className="w-3 h-3" /> Approved Motor Rates (Aurobindo / Apitoria / Eugia / APL)
+                    <div className="absolute z-20 left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded-md shadow-2xl max-h-64 overflow-auto no-scrollbar divide-y divide-slate-800">
+                      {prevList.length > 0 && (
+                        <div>
+                          <div className="p-1.5 bg-blue-500/10 text-[10px] font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
+                            <History className="w-3 h-3 text-blue-400" /> Previous Entries & History
+                          </div>
+                          {prevList.map((s, si) => (
+                            <div
+                              key={`prev-${si}`}
+                              className="px-3 py-2 cursor-pointer hover:bg-blue-500/10 text-sm text-slate-200 transition-colors"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                const newItems = [...data.items];
+                                newItems[index] = { 
+                                  ...newItems[index], 
+                                  name: s.description, 
+                                  hsn: s.hsn || newItems[index].hsn || '9987', 
+                                  price: s.rate !== undefined && s.rate > 0 ? s.rate : newItems[index].price, 
+                                  quantityUnit: s.unit || newItems[index].quantityUnit || 'NOS' 
+                                };
+                                onChange({ ...data, items: newItems });
+                                setActiveItemIdx(null);
+                              }}
+                            >
+                              <div className="font-semibold text-slate-100 flex items-center justify-between">
+                                <span>{s.description}</span>
+                                {s.rate !== undefined && s.rate > 0 && (
+                                  <span className="text-emerald-400 font-mono font-bold text-xs">
+                                    ₹{s.rate.toLocaleString('en-IN')}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[10px] text-slate-400 font-mono mt-0.5 flex gap-3">
+                                {s.source && <span>Source: <strong className="text-slate-300">{s.source}</strong></span>}
+                                {s.unit && <span>Unit: <strong className="text-slate-300">{s.unit}</strong></span>}
+                                {s.hsn && <span>HSN: <strong className="text-slate-300">{s.hsn}</strong></span>}
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       )}
-                      {motorList.map((s, si) => (
-                        <div
-                          key={`motor-${si}`}
-                          className="px-3 py-2 cursor-pointer hover:bg-amber-500/10 text-sm text-slate-200 transition-colors"
-                          onMouseDown={(e) => {
-                            e.preventDefault();
-                            const newItems = [...data.items];
-                            newItems[index] = { 
-                              ...newItems[index], 
-                              name: s.name, 
-                              hsn: s.hsn || '9987', 
-                              price: s.price, 
-                              quantityUnit: s.quantityUnit || 'NOS' 
-                            };
-                            onChange({ ...data, items: newItems });
-                            setActiveItemIdx(null);
-                          }}
-                        >
-                          <div className="font-semibold text-slate-100 flex items-center justify-between">
-                            <span>{s.name}</span>
-                            <span className="text-amber-400 font-mono font-bold text-xs">₹{s.price.toLocaleString('en-IN')}</span>
+
+                      {motorList.length > 0 && (
+                        <div>
+                          <div className="p-1.5 bg-amber-500/5 text-[10px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                            <Sparkles className="w-3 h-3" /> Approved Motor Rates (Aurobindo / Apitoria / Eugia / APL)
                           </div>
-                          <div className="text-[10px] text-slate-400 font-mono mt-0.5 flex gap-3">
-                            <span>HSN: <strong className="text-slate-300">{s.hsn}</strong></span>
-                            <span>Speed: <strong className="text-slate-300">{s.rpm}</strong></span>
-                            <span className="text-amber-300 font-semibold">(Editable Rate)</span>
-                          </div>
+                          {motorList.map((s, si) => (
+                            <div
+                              key={`motor-${si}`}
+                              className="px-3 py-2 cursor-pointer hover:bg-amber-500/10 text-sm text-slate-200 transition-colors"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                const newItems = [...data.items];
+                                newItems[index] = { 
+                                  ...newItems[index], 
+                                  name: s.name, 
+                                  hsn: s.hsn || '9987', 
+                                  price: s.price, 
+                                  quantityUnit: s.quantityUnit || 'NOS' 
+                                };
+                                onChange({ ...data, items: newItems });
+                                setActiveItemIdx(null);
+                              }}
+                            >
+                              <div className="font-semibold text-slate-100 flex items-center justify-between">
+                                <span>{s.name}</span>
+                                <span className="text-amber-400 font-mono font-bold text-xs">₹{s.price.toLocaleString('en-IN')}</span>
+                              </div>
+                              <div className="text-[10px] text-slate-400 font-mono mt-0.5 flex gap-3">
+                                <span>HSN: <strong className="text-slate-300">{s.hsn}</strong></span>
+                                <span>Speed: <strong className="text-slate-300">{s.rpm}</strong></span>
+                                <span className="text-amber-300 font-semibold">(Editable Rate)</span>
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      )}
 
                       {invList.length > 0 && (
-                        <div className="p-1.5 bg-emerald-500/5 text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
-                          Inventory Items
+                        <div>
+                          <div className="p-1.5 bg-emerald-500/5 text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
+                            Inventory Items
+                          </div>
+                          {invList.map((s, si) => (
+                            <div
+                              key={`inv-${si}`}
+                              className="px-3 py-2 cursor-pointer hover:bg-emerald-500/10 text-sm text-slate-200 transition-colors"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                const newItems = [...data.items];
+                                newItems[index] = { 
+                                  ...newItems[index], 
+                                  name: s.name, 
+                                  hsn: s.hsn || '9987', 
+                                  price: s.price || 0, 
+                                  quantityUnit: s.quantityUnit || 'NOS' 
+                                };
+                                onChange({ ...data, items: newItems });
+                                setActiveItemIdx(null);
+                              }}
+                            >
+                              <div className="font-semibold text-slate-100">{s.name}</div>
+                              <div className="text-[10px] text-emerald-400 font-mono">₹{s.price} • HSN: {s.hsn || '9987'}</div>
+                            </div>
+                          ))}
                         </div>
                       )}
-                      {invList.map((s, si) => (
-                        <div
-                          key={`inv-${si}`}
-                          className="px-3 py-2 cursor-pointer hover:bg-emerald-500/10 text-sm text-slate-200 transition-colors"
-                          onMouseDown={(e) => {
-                            e.preventDefault();
-                            const newItems = [...data.items];
-                            newItems[index] = { 
-                              ...newItems[index], 
-                              name: s.name, 
-                              hsn: s.hsn || '9987', 
-                              price: s.price || 0, 
-                              quantityUnit: s.quantityUnit || 'NOS' 
-                            };
-                            onChange({ ...data, items: newItems });
-                            setActiveItemIdx(null);
-                          }}
-                        >
-                          <div className="font-semibold text-slate-100">{s.name}</div>
-                          <div className="text-[10px] text-emerald-400 font-mono">₹{s.price} • HSN: {s.hsn || '9987'}</div>
-                        </div>
-                      ))}
                     </div>
                   );
                 })()}

@@ -38,7 +38,7 @@ export default function CashBillPreview({ data }: Props) {
             </div>
             <div className="text-right text-[11px] font-bold text-slate-800 leading-tight">
               <div>Cell: 93953 17758</div>
-              <div>: 83414 74357</div>
+              <div>: 96767 74370</div>
             </div>
           </div>
 
@@ -99,11 +99,10 @@ export default function CashBillPreview({ data }: Props) {
               </div>
               <div className="col-span-3 flex items-center gap-1.5 justify-end">
                 <span className="font-bold text-slate-900">Status:</span>
-                <span className={`font-black px-2 py-0.5 rounded-xs text-[10px] uppercase tracking-wider ${
-                  data.paymentStatus === 'Paid'
+                <span className={`font-black px-2 py-0.5 rounded-xs text-[10px] uppercase tracking-wider ${data.paymentStatus === 'Paid'
                     ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                     : 'bg-amber-100 text-amber-800 border border-amber-300'
-                }`}>
+                  }`}>
                   {data.paymentStatus || 'Paid'}
                 </span>
               </div>
