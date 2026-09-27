@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function Dashboard() {
   const result = await getDashboardStats();
-  const stats = result.success && result.data ? result.data : { totalRevenue: 0, customers: 0, recentInvoices: [], recentQuotations: [], recentDeliveryChallans: [] };
+  const stats = result.success && result.data ? result.data : { totalRevenue: 0, customers: 0, recentInvoices: [], recentQuotations: [], recentDeliveryChallans: [], recentCashBills: [] };
 
   let overdueAmount = 0;
   let overdueCount = 0;
@@ -86,6 +86,7 @@ export default async function Dashboard() {
           invoices={stats.recentInvoices} 
           quotations={stats.recentQuotations} 
           deliveryChallans={stats.recentDeliveryChallans || []}
+          cashBills={stats.recentCashBills || []}
         />
 
       </div>

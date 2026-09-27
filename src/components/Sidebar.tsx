@@ -2,13 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, FileText, Quote, Users, Settings, Zap, Database, ChevronLeft, ChevronRight, Building2, Package, Truck } from 'lucide-react';
+import { LayoutDashboard, FileText, Receipt, Quote, Users, Settings, Zap, Database, ChevronLeft, ChevronRight, Building2, Package, Truck } from 'lucide-react';
 import Image from 'next/image';
 import { useState } from 'react';
 
 const navItems = [
   { href: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { href: '/invoices/new', icon: FileText, label: 'New Invoice' },
+  { href: '/cash-bills/new', icon: Receipt, label: 'Cash Bill (No GST)' },
   { href: '/quotations/new', icon: Quote, label: 'Quotations' },
   { href: '/delivery-challan', icon: Truck, label: 'Delivery Challan' },
   { href: '/clients', icon: Building2, label: 'Clients CRM' },

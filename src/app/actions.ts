@@ -4,7 +4,7 @@ import { GoogleSpreadsheet } from 'google-spreadsheet';
 import { JWT } from 'google-auth-library';
 import fs from 'fs';
 import path from 'path';
-import { InvoiceData, QuotationData, Client, InventoryItem, DeliveryChallanData } from '@/types';
+import { InvoiceData, QuotationData, Client, InventoryItem, DeliveryChallanData, CashBillData } from '@/types';
 import legacyCompanies from '@/data/companies.json';
 
 // Helper to get or create a named sheet tab
@@ -375,17 +375,25 @@ export async function getDashboardStats() {
     const merged = recentInvoices.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     const mergedQ = recentQuotations.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     const deliveryChallans = await getDeliveryChallanList();
+    const cashBills = await getCashBillList();
 
     return {
       success: true,
-      data: { totalRevenue: totalRevenue.value, customers: customerSet.size, recentInvoices: merged, recentQuotations: mergedQ, recentDeliveryChallans: deliveryChallans }
+      data: { 
+        totalRevenue: totalRevenue.value, 
+        customers: customerSet.size, 
+        recentInvoices: merged, 
+        recentQuotations: mergedQ, 
+        recentDeliveryChallans: deliveryChallans,
+        recentCashBills: cashBills
+      }
     };
 
   } catch (error: any) {
     return {
       success: false,
       error: 'Failed to load dashboard: ' + error.message,
-      data: { totalRevenue: 0, customers: 0, recentInvoices: [], recentQuotations: [], recentDeliveryChallans: [] }
+      data: { totalRevenue: 0, customers: 0, recentInvoices: [], recentQuotations: [], recentDeliveryChallans: [], recentCashBills: [] }
     };
   }
 }
@@ -1282,6 +1290,180 @@ export async function getDeliveryChallanList() {
     }
   } catch (e) {
     console.error('getDeliveryChallanList error:', e);
+  }
+  return list;
+}
+
+// ────────────────────── CASH BILL ACTIONS (Non-GST) ──────────────────────
+let lastKnownCashBillNo: string | null = null;
+
+export async function getNextCashBillNumber() {
+  const defaultStart = "PLEW-CB-00001";
+  try {
+    const doc = await getSheetSafely();
+    let sheet = doc.sheetsByTitle['Cash Bills'];
+    if (!sheet) {
+      return lastKnownCashBillNo ? incrementId(lastKnownCashBillNo, defaultStart) : defaultStart;
+    }
+    
+    await sheet.loadHeaderRow();
+    const rows = await sheet.getRows();
+    const latestId = getLastId(rows, 'Bill No');
+
+    if (!latestId) {
+      return lastKnownCashBillNo ? incrementId(lastKnownCashBillNo, defaultStart) : defaultStart;
+    }
+    lastKnownCashBillNo = latestId;
+    return incrementId(latestId, defaultStart);
+  } catch (error: any) {
+    console.warn('getNextCashBillNumber error, using fallback:', error.message);
+    if (lastKnownCashBillNo) {
+      return incrementId(lastKnownCashBillNo, defaultStart);
+    }
+    return defaultStart;
+  }
+}
+
+export async function saveCashBillToSpreadsheet(data: CashBillData) {
+  try {
+    const doc = await getSheetSafely(5000);
+
+    const expectedHeaders = ['Bill No', 'Date', 'Customer Name', 'Phone', 'Payment Mode', 'Subtotal', 'Discount', 'Total Amount', 'Status', 'RawData'];
+    let sheet = doc.sheetsByTitle['Cash Bills'];
+
+    if (!sheet) {
+      sheet = await doc.addSheet({ title: 'Cash Bills', headerValues: expectedHeaders });
+    } else {
+      try { await sheet.loadHeaderRow(); } catch (e) {}
+      try {
+        const headers = sheet.headerValues || [];
+        if (!headers.includes('Bill No') || !headers.includes('Total Amount')) {
+          await sheet.setHeaderRow(expectedHeaders);
+        }
+      } catch (err) {}
+    }
+
+    const rows = await sheet.getRows();
+    let targetRow = rows.find(r => r.get('Bill No') === data.billNo);
+
+    const subtotal = (data.items || []).reduce((sum, item) => sum + (Number(item.quantity || 0) * Number(item.rate || 0)), 0);
+    const totalAmount = Math.max(0, subtotal - Number(data.discount || 0));
+
+    const rowObj = {
+      'Bill No': data.billNo,
+      'Date': data.billDate,
+      'Customer Name': data.customerName,
+      'Phone': data.customerPhone || '',
+      'Payment Mode': data.paymentMode || 'Cash',
+      'Subtotal': subtotal.toFixed(2),
+      'Discount': Number(data.discount || 0).toFixed(2),
+      'Total Amount': totalAmount.toFixed(2),
+      'Status': data.paymentStatus || data.status || 'Paid',
+      'RawData': JSON.stringify(data),
+    };
+
+    if (targetRow) {
+      targetRow.assign(rowObj);
+      await targetRow.save();
+    } else {
+      await sheet.addRow(rowObj);
+    }
+
+    if (data.billNo) {
+      lastKnownCashBillNo = data.billNo;
+    }
+    return { success: true, offline: false, error: undefined };
+  } catch (error: any) {
+    console.error('saveCashBillToSpreadsheet error:', error);
+    return { success: false, error: error.message || 'Failed to save cash bill' };
+  }
+}
+
+export async function loadCashBill(billNo: string) {
+  try {
+    const doc = await getSheetSafely(5000);
+    const sheet = doc.sheetsByTitle['Cash Bills'];
+    if (!sheet) {
+      return { success: false, error: 'Cash Bills tab not found in Google Sheets.' };
+    }
+
+    await sheet.loadHeaderRow();
+    const rows = await sheet.getRows();
+
+    for (let i = 0; i < rows.length; i++) {
+      const cellVal = rows[i].get('Bill No') || '';
+      if (cellVal.toString().trim().toUpperCase() === billNo.trim().toUpperCase()) {
+        const rawJson = rows[i].get('RawData');
+        if (rawJson) {
+          try {
+            const parsed = JSON.parse(rawJson);
+            return { success: true, data: parsed as CashBillData };
+          } catch (e) {
+            console.error('Failed to parse CashBill RawData JSON:', e);
+          }
+        }
+
+        const reconstructed: CashBillData = {
+          billNo: rows[i].get('Bill No') || billNo,
+          billDate: rows[i].get('Date') || new Date().toISOString().split('T')[0],
+          paymentMode: (rows[i].get('Payment Mode') || 'Cash') as any,
+          paymentStatus: (rows[i].get('Status') || 'Paid') as any,
+          customerName: rows[i].get('Customer Name') || '',
+          customerPhone: rows[i].get('Phone') || '',
+          customerAddress: '',
+          items: [
+            {
+              id: 'cb-item-reconstructed',
+              description: 'General Electrical Materials/Repair',
+              quantity: 1,
+              unit: 'NOS',
+              rate: parseFloat(rows[i].get('Total Amount') || '0'),
+              amount: parseFloat(rows[i].get('Total Amount') || '0')
+            }
+          ],
+          discount: parseFloat(rows[i].get('Discount') || '0'),
+          notes: '',
+          status: (rows[i].get('Status') || 'Paid') as any
+        };
+        return { success: true, data: reconstructed };
+      }
+    }
+    return { success: false, error: `Cash Bill "${billNo}" not found.` };
+  } catch (error: any) {
+    console.error('loadCashBill error:', error);
+    return { success: false, error: 'Load failed: ' + error.message };
+  }
+}
+
+export async function getCashBillList() {
+  const list: any[] = [];
+  try {
+    const doc = await getSheetSafely(5000);
+    const sheet = doc.sheetsByTitle['Cash Bills'];
+    if (sheet) {
+      const rows = await sheet.getRows();
+      rows.forEach(r => {
+        const billNo = r.get('Bill No');
+        if (billNo) {
+          let rawData = null;
+          try {
+            if (r.get('RawData')) rawData = JSON.parse(r.get('RawData'));
+          } catch(e) {}
+          list.push({
+            id: billNo,
+            date: r.get('Date') || '',
+            customer: r.get('Customer Name') || '',
+            phone: r.get('Phone') || '',
+            paymentMode: r.get('Payment Mode') || 'Cash',
+            amount: parseFloat(r.get('Total Amount') || '0'),
+            status: r.get('Status') || 'Paid',
+            rawData
+          });
+        }
+      });
+    }
+  } catch (e) {
+    console.error('getCashBillList error:', e);
   }
   return list;
 }

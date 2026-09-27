@@ -195,6 +195,7 @@ export interface Client {
   address: string;
   gstin: string;
   placeOfSupply: string;
+  phone?: string;
 }
 
 export interface InventoryItem {
@@ -266,4 +267,54 @@ export const initialDeliveryChallanData: DeliveryChallanData = {
   remarks: '',
   status: 'Pending'
 };
+
+// ─── Cash Bill (Non-GST Normal Invoice) ───────────────────────────────────────
+export interface CashBillItem {
+  id: string;
+  description: string;
+  quantity: number;
+  unit: string;
+  rate: number;
+  amount: number;
+}
+
+export interface CashBillData {
+  billNo: string;
+  billDate: string;
+  paymentMode: 'Cash' | 'UPI' | 'Bank Transfer' | 'Cheque';
+  paymentStatus: 'Paid' | 'Pending';
+  customerName: string;
+  customerPhone: string;
+  customerAddress: string;
+  vehicleNo?: string;
+  items: CashBillItem[];
+  discount: number;
+  notes: string;
+  status?: 'Paid' | 'Pending' | 'Cancelled';
+}
+
+export const initialCashBillData: CashBillData = {
+  billNo: 'PLEW-CB-00001',
+  billDate: new Date().toISOString().split('T')[0],
+  paymentMode: 'Cash',
+  paymentStatus: 'Paid',
+  customerName: '',
+  customerPhone: '',
+  customerAddress: '',
+  vehicleNo: '',
+  items: [
+    {
+      id: 'cb-item-1',
+      description: '',
+      quantity: 1,
+      unit: 'NOS',
+      rate: 0,
+      amount: 0
+    }
+  ],
+  discount: 0,
+  notes: '1. Goods once sold cannot be returned without bill.\n2. Warranty on motor rewinding & repairs as per standard terms.',
+  status: 'Paid'
+};
+
 

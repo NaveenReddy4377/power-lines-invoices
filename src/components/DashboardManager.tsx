@@ -24,7 +24,8 @@ import {
   ExternalLink,
   Download,
   Sparkles,
-  ArrowUpDown
+  ArrowUpDown,
+  Receipt
 } from 'lucide-react';
 import Link from 'next/link';
 import * as XLSX from 'xlsx';
@@ -61,6 +62,17 @@ export interface DeliveryChallanRecord {
   rawData?: any;
 }
 
+export interface CashBillRecord {
+  id: string;
+  date: string;
+  customer: string;
+  phone?: string;
+  paymentMode?: string;
+  amount: number;
+  status?: string;
+  rawData?: any;
+}
+
 function isOverdue(r: any) {
   if (r.status !== 'Pending' || !r.dueDate) return false;
   const due = new Date(r.dueDate);
@@ -73,9 +85,10 @@ interface DashboardManagerProps {
   invoices: Record[];
   quotations: Record[];
   deliveryChallans?: DeliveryChallanRecord[];
+  cashBills?: CashBillRecord[];
 }
 
-export default function DashboardManager({ invoices, quotations, deliveryChallans = [] }: DashboardManagerProps) {
+export default function DashboardManager({ invoices, quotations, deliveryChallans = [], cashBills = [] }: DashboardManagerProps) {
   const [invoicesState, setInvoicesState] = useState<Record[]>(invoices);
   const [quotationsState, setQuotationsState] = useState<Record[]>(quotations);
   const [viewAllType, setViewAllType] = useState<'invoices' | 'quotations' | 'deliveryChallans' | null>(null);
@@ -518,6 +531,41 @@ export default function DashboardManager({ invoices, quotations, deliveryChallan
     }
   };
 
+  const handleExportCashBillsExcel = () => {
+    try {
+      const rows = cashBills.map((cb, idx) => ({
+        'S.No': idx + 1,
+        'Bill No': cb.id,
+        'Date': cb.date,
+        'Customer Name': cb.customer,
+        'Phone': cb.phone || '',
+        'Payment Mode': cb.paymentMode || 'Cash',
+        'Amount (₹)': Number(cb.amount || 0),
+        'Status': cb.status || 'Paid'
+      }));
+
+      const totalAmount = cashBills.reduce((sum, cb) => sum + Number(cb.amount || 0), 0);
+      rows.push({
+        'S.No': '',
+        'Bill No': 'TOTAL',
+        'Date': '',
+        'Customer Name': '',
+        'Phone': '',
+        'Payment Mode': '',
+        'Amount (₹)': totalAmount,
+        'Status': ''
+      } as any);
+
+      const worksheet = XLSX.utils.json_to_sheet(rows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Cash Bills');
+      worksheet['!cols'] = [{ wch: 8 }, { wch: 18 }, { wch: 14 }, { wch: 32 }, { wch: 18 }, { wch: 16 }, { wch: 16 }, { wch: 14 }];
+      XLSX.writeFile(workbook, `Cash_Bills_Export_${new Date().toISOString().split('T')[0]}.xlsx`);
+    } catch (e: any) {
+      alert('Failed to export Cash Bills: ' + e.message);
+    }
+  };
+
   return (
     <>
       {/* Quick Excel Export Hub Action Banner */}
@@ -748,6 +796,117 @@ export default function DashboardManager({ invoices, quotations, deliveryChallan
                         className="inline-flex items-center gap-1 text-[10px] font-extrabold px-3 py-1 rounded-md bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 transition-colors shadow-sm"
                       >
                         <Edit3 className="w-3 h-3 text-amber-600" /> EDIT
+                      </Link>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Cash Bills (Non-GST) Table Section */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mt-6">
+        {/* Card Header */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between px-6 py-4 border-b border-slate-100 bg-white gap-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-100 shadow-xs">
+              <Receipt className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-extrabold text-slate-900 tracking-tight">Cash Bills (Non-GST)</h3>
+                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  {cashBills.length} Bills
+                </span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                  0% GST
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 font-medium">Counter cash sales, motor repairs, and non-tax retail bills</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+            <button
+              onClick={handleExportCashBillsExcel}
+              className="text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg px-3 py-1.5 transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+              title="Export Cash Bills to Excel"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Export Excel</span>
+            </button>
+
+            <Link
+              href="/cash-bills/new"
+              className="text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg px-3 py-1.5 transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+            >
+              <span>+ New Cash Bill</span>
+            </Link>
+          </div>
+        </div>
+
+        {/* Table */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs text-slate-600">
+            <thead className="bg-slate-50/75 border-b border-slate-100 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+              <tr>
+                <th className="px-6 py-3">Bill No</th>
+                <th className="px-6 py-3">Date</th>
+                <th className="px-6 py-3">Customer / Party</th>
+                <th className="px-6 py-3">Phone</th>
+                <th className="px-6 py-3 text-center">Payment Mode</th>
+                <th className="px-6 py-3 text-right">Amount (₹)</th>
+                <th className="px-6 py-3 text-center">Status</th>
+                <th className="px-6 py-3 text-center">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {cashBills.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-6 py-10 text-center text-slate-400 font-medium">
+                    No cash bills recorded yet. Click &ldquo;+ New Cash Bill&rdquo; to create your first non-GST cash bill.
+                  </td>
+                </tr>
+              ) : (
+                cashBills.slice(0, 10).map((cb) => (
+                  <tr key={cb.id} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="px-6 py-3.5 font-bold text-slate-900 whitespace-nowrap">
+                      {cb.id}
+                    </td>
+                    <td className="px-6 py-3.5 whitespace-nowrap text-slate-500">
+                      {cb.date}
+                    </td>
+                    <td className="px-6 py-3.5 font-semibold text-slate-800">
+                      {cb.customer || '—'}
+                    </td>
+                    <td className="px-6 py-3.5 text-slate-500 whitespace-nowrap">
+                      {cb.phone || '—'}
+                    </td>
+                    <td className="px-6 py-3.5 whitespace-nowrap text-center">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                        {cb.paymentMode || 'Cash'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-3.5 text-right font-bold text-slate-900 whitespace-nowrap">
+                      ₹{Number(cb.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-6 py-3.5 whitespace-nowrap text-center">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                        cb.status === 'Paid'
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : 'bg-amber-50 text-amber-700 border border-amber-200'
+                      }`}>
+                        {cb.status || 'Paid'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-3.5 whitespace-nowrap text-center">
+                      <Link
+                        href={`/cash-bills/new?edit=${encodeURIComponent(cb.id)}`}
+                        className="inline-flex items-center gap-1 text-[10px] font-extrabold px-3 py-1 rounded-md bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 transition-colors shadow-xs"
+                      >
+                        <Edit3 className="w-3 h-3 text-emerald-600" /> EDIT
                       </Link>
                     </td>
                   </tr>
