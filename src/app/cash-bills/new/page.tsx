@@ -214,6 +214,17 @@ function CashBillContent() {
     }
   };
 
+  const getDocumentFileName = (extension: string) => {
+    const rawBillNo = data.billNo?.trim() || 'PLEW-CB-00001';
+    const safeBillNo = rawBillNo.replace(/[/\\?%*:|"<>]/g, '-').trim();
+    
+    const rawCustomer = data.customerName?.trim() || '';
+    const safeCustomer = rawCustomer ? rawCustomer.replace(/[/\\?%*:|"<>]/g, '').trim() : '';
+
+    const baseName = safeCustomer ? `${safeBillNo}_${safeCustomer}` : safeBillNo;
+    return `${baseName}.${extension}`;
+  };
+
   const handleDownloadExcel = () => {
     setIsDownloadingExcel(true);
     try {
@@ -252,7 +263,7 @@ function CashBillContent() {
         { wch: 15 }, { wch: 15 }, { wch: 35 }
       ];
 
-      XLSX.writeFile(workbook, `${data.billNo || 'Cash_Bill'}.xlsx`);
+      XLSX.writeFile(workbook, getDocumentFileName('xlsx'));
     } catch (err: any) {
       alert('Failed to generate Excel file: ' + err.message);
     } finally {
@@ -286,7 +297,7 @@ function CashBillContent() {
       const pdfHeight = (element.offsetHeight * pdfWidth) / element.offsetWidth;
 
       pdf.addImage(dataUrl, 'JPEG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
-      pdf.save(`${data.billNo || 'Cash_Bill'}.pdf`);
+      pdf.save(getDocumentFileName('pdf'));
     } catch (err: any) {
       alert('Failed to download PDF: ' + err.message);
     } finally {
@@ -302,7 +313,18 @@ function CashBillContent() {
         console.warn('Auto-save before print error:', e);
       }
     }
+
+    const originalTitle = document.title;
+    const rawBillNo = data.billNo?.trim() || 'Cash_Bill';
+    const rawCustomer = data.customerName?.trim() || '';
+    const safeCustomer = rawCustomer ? rawCustomer.replace(/[/\\?%*:|"<>]/g, '').trim() : '';
+    document.title = safeCustomer ? `${rawBillNo} - ${safeCustomer}` : rawBillNo;
+
     window.print();
+
+    setTimeout(() => {
+      document.title = originalTitle;
+    }, 1500);
   };
 
   if (!mounted) {
