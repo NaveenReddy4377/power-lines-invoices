@@ -2,6 +2,7 @@ import { TrendingUp, Clock, Users, Quote, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 import { getDashboardStats } from '@/app/actions';
 import DashboardManager from '@/components/DashboardManager';
+import DailyQuote from '@/components/DailyQuote';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,6 +41,9 @@ export default async function Dashboard() {
             System Live & Syncing
           </div>
         </div>
+
+        {/* Daily Motivational Quote */}
+        <DailyQuote />
 
         {/* Summary Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
