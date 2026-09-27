@@ -1288,11 +1288,12 @@ export async function getDeliveryChallanList() {
 
 export async function extractDCFromImage(base64Data: string, mimeType: string = 'image/jpeg') {
   try {
-    const apiKey = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+    const rawKey = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+    const apiKey = rawKey ? rawKey.trim().replace(/^["']|["']$/g, '') : '';
     if (!apiKey) {
       return {
         success: false,
-        error: 'GEMINI_API_KEY is not configured in .env.local. Please set GEMINI_API_KEY to enable AI OCR extraction.'
+        error: 'GEMINI_API_KEY is not configured. Please set GEMINI_API_KEY in environment variables.'
       };
     }
 
