@@ -1384,11 +1384,53 @@ Return ONLY raw valid JSON text.`;
     const resData = await response.json();
     const rawText = resData.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
     const cleanJsonStr = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
-    const extracted = JSON.parse(cleanJsonStr);
+    const jsonMatch = cleanJsonStr.match(/\{[\s\S]*\}/);
+    const jsonToParse = jsonMatch ? jsonMatch[0] : cleanJsonStr;
+    const extracted = JSON.parse(jsonToParse);
 
     return { success: true, data: extracted };
   } catch (error: any) {
     console.error('extractDCFromImage error:', error);
     return { success: false, error: error.message || 'Failed to extract text from document.' };
+  }
+}
+
+export async function extractDCFromUrl(photoUrl: string) {
+  try {
+    if (!photoUrl) {
+      return { success: false, error: 'No URL provided' };
+    }
+
+    let base64 = '';
+    let mimeType = 'image/jpeg';
+
+    if (photoUrl.startsWith('/uploads/')) {
+      const filePath = path.join(process.cwd(), 'public', photoUrl.replace(/^\//, ''));
+      if (!fs.existsSync(filePath)) {
+        return { success: false, error: 'Local file not found on server' };
+      }
+      const buffer = fs.readFileSync(filePath);
+      base64 = buffer.toString('base64');
+      const ext = path.extname(filePath).toLowerCase();
+      if (ext === '.pdf') mimeType = 'application/pdf';
+      else if (ext === '.png') mimeType = 'image/png';
+      else if (ext === '.webp') mimeType = 'image/webp';
+    } else if (photoUrl.startsWith('http')) {
+      const resp = await fetch(photoUrl);
+      if (!resp.ok) {
+        return { success: false, error: `Failed to download image from URL (${resp.status})` };
+      }
+      const arrayBuf = await resp.arrayBuffer();
+      base64 = Buffer.from(arrayBuf).toString('base64');
+      const ct = resp.headers.get('content-type');
+      if (ct) mimeType = ct;
+    } else {
+      return { success: false, error: 'Unsupported URL format' };
+    }
+
+    return await extractDCFromImage(base64, mimeType);
+  } catch (error: any) {
+    console.error('extractDCFromUrl error:', error);
+    return { success: false, error: error.message || 'Failed to extract document from URL' };
   }
 }
