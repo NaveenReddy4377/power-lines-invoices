@@ -1,30 +1,37 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { InvoiceData } from '@/types';
-import companies from '@/data/companies.json';
-import { Plus, Trash2, Building, ScanLine, FileText, IndianRupee } from 'lucide-react';
-import { getItemSuggestions } from '@/app/actions';
+import { InvoiceData, Client, InventoryItem } from '@/types';
+import { Plus, Trash2, Building, ScanLine, FileText, IndianRupee, Zap, Sparkles, Loader2 } from 'lucide-react';
+import { getClients, getInventory } from '@/app/actions';
+import { getMotorSuggestions, findMotorPrice, approvedCompanies } from '@/data/motor-rates';
 
 interface Props {
   data: InvoiceData;
   onChange: (data: InvoiceData) => void;
   onLoad?: (invoiceNo: string) => void;
+  isLoading?: boolean;
 }
 
-export default function InvoiceForm({ data, onChange, onLoad }: Props) {
+export default function InvoiceForm({ data, onChange, onLoad, isLoading }: Props) {
   const [searchTerm, setSearchTerm] = useState(data.billTo.name);
   const [showDropdown, setShowDropdown] = useState(false);
-  const [itemSuggestions, setItemSuggestions] = useState<string[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [activeItemIdx, setActiveItemIdx] = useState<number | null>(null);
   const [itemSearch, setItemSearch] = useState<string>('');
   const itemDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    getItemSuggestions().then(setItemSuggestions).catch(() => {});
+    getClients().then(setClients).catch(() => {});
+    getInventory().then(setInventory).catch(() => {});
   }, []);
 
-  const filteredCompanies = companies.filter(c => 
+  useEffect(() => {
+    setSearchTerm(data.billTo.name);
+  }, [data.billTo.name]);
+
+  const filteredCompanies = clients.filter(c => 
     c.name.toLowerCase().includes(searchTerm.toLowerCase())
   ).slice(0, 10);
 
@@ -36,7 +43,7 @@ export default function InvoiceForm({ data, onChange, onLoad }: Props) {
     }
   };
 
-  const selectCompany = (company: {name: string; gstin: string; address?: string}) => {
+  const selectCompany = (company: Client) => {
     setSearchTerm(company.name);
     onChange({
       ...data,
@@ -44,7 +51,8 @@ export default function InvoiceForm({ data, onChange, onLoad }: Props) {
         ...data.billTo,
         name: company.name,
         gstin: company.gstin,
-        ...(company.address ? { address: company.address } : {})
+        ...(company.address ? { address: company.address } : {}),
+        ...(company.placeOfSupply ? { placeOfSupply: company.placeOfSupply } : {})
       }
     });
     setShowDropdown(false);
@@ -55,7 +63,7 @@ export default function InvoiceForm({ data, onChange, onLoad }: Props) {
       ...data,
       items: [
         ...data.items,
-        { id: crypto.randomUUID(), name: '', hsn: '', quantity: 1, quantityUnit: 'NOS', price: 0, discount: 0, discountType: 'percentage' }
+        { id: crypto.randomUUID(), name: '', hsn: '9987', quantity: 1, quantityUnit: 'NOS', price: 0, discount: 0, discountType: 'percentage' }
       ]
     });
   };
@@ -87,19 +95,31 @@ export default function InvoiceForm({ data, onChange, onLoad }: Props) {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-medium text-slate-400 mb-1">Invoice No</label>
-            <div className="flex gap-2">
-              <input 
-                type="text" 
-                className="flex-1 min-w-0 bg-slate-900 border border-slate-700 rounded-md p-2 text-sm text-slate-100 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
-                value={data.invoiceNo} 
-                onChange={e => updateField('root', 'invoiceNo', e.target.value)} 
-              />
+            <div className="flex gap-2 relative">
+              <div className="relative flex-1 min-w-0">
+                <input 
+                  type="text" 
+                  className="w-full bg-slate-900 border border-slate-700 rounded-md p-2 pr-8 text-sm text-slate-100 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 disabled:opacity-60"
+                  value={data.invoiceNo} 
+                  disabled={isLoading}
+                  placeholder={isLoading ? "Loading Invoice No..." : "e.g. PLEW001231"}
+                  onChange={e => updateField('root', 'invoiceNo', e.target.value)} 
+                />
+                {isLoading && (
+                  <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
+                    <Loader2 className="w-4 h-4 text-emerald-400 animate-spin" />
+                  </div>
+                )}
+              </div>
               <button 
+                type="button"
                 onClick={handleLoad} 
+                disabled={isLoading}
                 title="Load existing invoice"
-                className="bg-emerald-600 hover:bg-emerald-500 text-white rounded p-2 px-3 text-xs font-semibold shrink-0 transition-colors"
+                className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded p-2 px-3 text-xs font-semibold shrink-0 transition-colors flex items-center gap-1.5 cursor-pointer"
               >
-                Load
+                {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                <span>{isLoading ? 'Loading...' : 'Load'}</span>
               </button>
             </div>
           </div>
@@ -227,41 +247,112 @@ export default function InvoiceForm({ data, onChange, onLoad }: Props) {
             
             <div className="grid grid-cols-[1fr,80px] gap-3">
               <div className="relative">
-                <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Description</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[10px] uppercase font-bold text-slate-500">Description</label>
+                  <span className="text-[9px] text-amber-400/90 font-medium">Type HP (e.g. 5 HP) for auto-rate</span>
+                </div>
                 <input 
                   type="text" 
-                  className="w-full bg-slate-900 border border-slate-700 rounded p-1.5 text-sm"
+                  className="w-full bg-slate-900 border border-slate-700 rounded p-1.5 text-sm placeholder:text-slate-600"
+                  placeholder="e.g. 5 HP Motor Rewinding"
                   value={item.name} 
                   autoComplete="off"
                   onFocus={() => { setActiveItemIdx(index); setItemSearch(item.name); }}
-                  onBlur={() => setTimeout(() => setActiveItemIdx(null), 150)}
+                  onBlur={() => setTimeout(() => setActiveItemIdx(null), 200)}
                   onChange={e => {
-                    updateItem(index, 'name', e.target.value);
-                    setItemSearch(e.target.value);
+                    const val = e.target.value;
+                    setItemSearch(val);
                     setActiveItemIdx(index);
+
+                    const motorMatch = findMotorPrice(val);
+                    if (motorMatch) {
+                      const newItems = [...data.items];
+                      newItems[index] = {
+                        ...newItems[index],
+                        name: val,
+                        price: motorMatch.price,
+                        hsn: newItems[index].hsn || motorMatch.hsn || '9987'
+                      };
+                      onChange({ ...data, items: newItems });
+                    } else {
+                      updateItem(index, 'name', val);
+                    }
                   }} 
                 />
                 {activeItemIdx === index && (() => {
-                  const filtered = itemSuggestions.filter(s =>
-                    s.toLowerCase().includes(itemSearch.toLowerCase()) && s.toLowerCase() !== itemSearch.toLowerCase()
-                  ).slice(0, 8);
-                  return filtered.length > 0 ? (
-                    <div className="absolute z-20 left-0 right-0 mt-1 bg-slate-800 border border-slate-700 rounded-md shadow-xl max-h-48 overflow-auto no-scrollbar">
-                      {filtered.map((s, si) => (
+                  const motorList = getMotorSuggestions(itemSearch);
+                  const invList = inventory.filter(s =>
+                    s.name.toLowerCase().includes(itemSearch.toLowerCase()) && s.name.toLowerCase() !== itemSearch.toLowerCase()
+                  ).slice(0, 5);
+
+                  if (motorList.length === 0 && invList.length === 0) return null;
+
+                  return (
+                    <div className="absolute z-20 left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded-md shadow-2xl max-h-60 overflow-auto no-scrollbar divide-y divide-slate-800">
+                      {motorList.length > 0 && (
+                        <div className="p-1.5 bg-amber-500/5 text-[10px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                          <Sparkles className="w-3 h-3" /> Approved Motor Rates (Aurobindo / Apitoria / Eugia / APL)
+                        </div>
+                      )}
+                      {motorList.map((s, si) => (
                         <div
-                          key={si}
-                          className="px-3 py-2 cursor-pointer hover:bg-emerald-500/10 text-sm text-slate-200 border-b border-slate-700/50 last:border-0"
+                          key={`motor-${si}`}
+                          className="px-3 py-2 cursor-pointer hover:bg-amber-500/10 text-sm text-slate-200 transition-colors"
                           onMouseDown={(e) => {
                             e.preventDefault();
-                            updateItem(index, 'name', s);
+                            const newItems = [...data.items];
+                            newItems[index] = { 
+                              ...newItems[index], 
+                              name: s.name, 
+                              hsn: s.hsn || '9987', 
+                              price: s.price, 
+                              quantityUnit: s.quantityUnit || 'NOS' 
+                            };
+                            onChange({ ...data, items: newItems });
                             setActiveItemIdx(null);
                           }}
                         >
-                          {s}
+                          <div className="font-semibold text-slate-100 flex items-center justify-between">
+                            <span>{s.name}</span>
+                            <span className="text-amber-400 font-mono font-bold text-xs">₹{s.price.toLocaleString('en-IN')}</span>
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-mono mt-0.5 flex gap-3">
+                            <span>HSN: <strong className="text-slate-300">{s.hsn}</strong></span>
+                            <span>Speed: <strong className="text-slate-300">{s.rpm}</strong></span>
+                            <span className="text-amber-300 font-semibold">(Editable Rate)</span>
+                          </div>
+                        </div>
+                      ))}
+
+                      {invList.length > 0 && (
+                        <div className="p-1.5 bg-emerald-500/5 text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
+                          Inventory Items
+                        </div>
+                      )}
+                      {invList.map((s, si) => (
+                        <div
+                          key={`inv-${si}`}
+                          className="px-3 py-2 cursor-pointer hover:bg-emerald-500/10 text-sm text-slate-200 transition-colors"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            const newItems = [...data.items];
+                            newItems[index] = { 
+                              ...newItems[index], 
+                              name: s.name, 
+                              hsn: s.hsn || '9987', 
+                              price: s.price || 0, 
+                              quantityUnit: s.quantityUnit || 'NOS' 
+                            };
+                            onChange({ ...data, items: newItems });
+                            setActiveItemIdx(null);
+                          }}
+                        >
+                          <div className="font-semibold text-slate-100">{s.name}</div>
+                          <div className="text-[10px] text-emerald-400 font-mono">₹{s.price} • HSN: {s.hsn || '9987'}</div>
                         </div>
                       ))}
                     </div>
-                  ) : null;
+                  );
                 })()}
               </div>
               <div>

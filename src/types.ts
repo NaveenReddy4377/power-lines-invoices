@@ -43,6 +43,7 @@ export interface InvoiceData {
     accountNo: string;
     upiId: string;
   };
+  status?: 'Pending' | 'Cleared';
 }
 
 export const initialInvoiceData: InvoiceData = {
@@ -65,18 +66,18 @@ export const initialInvoiceData: InvoiceData = {
   items: [
     {
       id: crypto.randomUUID(),
-      name: '1.5HP/23STAGE V3 MOTOR',
-      hsn: '',
-      quantity: 2,
+      name: '',
+      hsn: '9987',
+      quantity: 1,
       quantityUnit: 'NOS',
-      price: 12550,
+      price: 0,
       discount: 0,
       discountType: 'percentage'
     }
   ],
   taxes: {
-    cgst: 9,
-    sgst: 9
+    cgst: 0,
+    sgst: 0
   },
   bankDetails: {
     name: 'POWER LINES ELECTRICAL WORKS',
@@ -84,7 +85,8 @@ export const initialInvoiceData: InvoiceData = {
     ifsc: 'SBIN0018062',
     accountNo: '43335667599',
     upiId: 'gadipallinaveenreddy-3@oksbi'
-  }
+  },
+  status: 'Pending'
 };
 
 // ───────────────────────────── QUOTATION TYPES ─────────────────────────────
@@ -112,6 +114,7 @@ export interface QuotationData {
   };
 
   termsAndConditions: string[];
+  status?: 'Pending' | 'Cleared';
 }
 
 export const initialQuotationData: QuotationData = {
@@ -131,7 +134,7 @@ export const initialQuotationData: QuotationData = {
     {
       id: crypto.randomUUID(),
       name: '',
-      hsn: '',
+      hsn: '9987',
       quantity: 1,
       quantityUnit: 'NOS',
       price: 0,
@@ -139,12 +142,128 @@ export const initialQuotationData: QuotationData = {
       discountType: 'percentage'
     }
   ],
-  taxes: { cgst: 9, sgst: 9 },
+  taxes: { cgst: 0, sgst: 0 },
   termsAndConditions: [
     'This quotation is valid for 30 days from the date of issue.',
     'Payment terms: 50% advance, balance on delivery.',
     'Goods once sold will not be taken back.',
     'All disputes subject to Sangareddy jurisdiction.',
-  ]
+  ],
+  status: 'Pending'
+};
+
+
+// ───────────────────────────── MOTOR QUOTATION TYPES ─────────────────────────────
+
+export interface MotorRate {
+  hp: string;
+  rpm1440: number;
+  rpm960: number;
+}
+
+export interface MotorQuotationData {
+  quotationNo: string;
+  quotationDate: string;
+  percentageIncrease: number;
+  companyName: string;
+  companyAddress: string;
+  termsAndConditions: string[];
+  status?: 'Pending' | 'Cleared';
+}
+
+export const initialMotorQuotationData: MotorQuotationData = {
+  quotationNo: 'PLEW-MQ-001',
+  quotationDate: new Date().toISOString().split('T')[0],
+  percentageIncrease: 0,
+  companyName: '',
+  companyAddress: '',
+  termsAndConditions: [
+    'GST @ 18% Extra.',
+    'Transportation Extra at actuals.',
+    'Payment: 100% against delivery.',
+    'Delivery: Within 2-3 days from the date of work order.',
+    'Warranty: 6 months against manufacturing defects.'
+  ],
+  status: 'Pending'
+};
+
+// ───────────────────────────── CRM & INVENTORY TYPES ─────────────────────────────
+
+export interface Client {
+  id: string;
+  name: string;
+  address: string;
+  gstin: string;
+  placeOfSupply: string;
+}
+
+export interface InventoryItem {
+  id: string;
+  name: string;
+  description: string;
+  hsn: string;
+  quantityUnit: string;
+  price: number;
+}
+
+// ───────────────────────────── DELIVERY CHALLAN TYPES ─────────────────────────────
+
+export interface DeliveryChallanItem {
+  id: string;
+  materialCode?: string;
+  description: string;
+  uom?: string;
+  quantity: number;
+  weight?: string;
+  remarks?: string;
+}
+
+export interface DeliveryChallanData {
+  dcNo: string;
+  dcDate: string;
+  challanType: 'Returnable' | 'Non-Returnable' | 'Regular';
+  customerName: string;
+  customerAddress: string;
+  customerGstin: string;
+  rgpNo: string;
+  rgpDate: string;
+  poNo: string;
+  poDate: string;
+  vehicleNo: string;
+  modeOfTransport: string;
+  quotationRaised?: 'Yes' | 'No';
+  items: DeliveryChallanItem[];
+  remarks: string;
+  rgpPhotoUrl?: string;
+  status?: 'Pending' | 'Dispatched' | 'Delivered' | 'Cleared';
+}
+
+export const initialDeliveryChallanData: DeliveryChallanData = {
+  dcNo: 'PLEW-DC-00001',
+  dcDate: new Date().toISOString().split('T')[0],
+  challanType: 'Returnable',
+  customerName: '',
+  customerAddress: '',
+  customerGstin: '',
+  rgpNo: '',
+  rgpDate: '',
+  poNo: '',
+  poDate: '',
+  vehicleNo: '',
+  modeOfTransport: 'BY ROAD',
+  quotationRaised: 'No',
+  items: [
+    {
+      id: 'item-default-1',
+      materialCode: '',
+      description: '',
+      uom: 'NOS',
+      quantity: 1,
+      weight: '',
+      remarks: ''
+    }
+  ],
+  remarks: '',
+  status: 'Pending'
 };
 

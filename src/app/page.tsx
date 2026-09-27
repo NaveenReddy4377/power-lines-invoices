@@ -1,4 +1,4 @@
-import { TrendingUp, Clock, Users, Quote } from 'lucide-react';
+import { TrendingUp, Clock, Users, Quote, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 import { getDashboardStats } from '@/app/actions';
 import DashboardManager from '@/components/DashboardManager';
@@ -7,7 +7,23 @@ export const dynamic = 'force-dynamic';
 
 export default async function Dashboard() {
   const result = await getDashboardStats();
-  const stats = result.success && result.data ? result.data : { totalRevenue: 0, customers: 0, recentInvoices: [], recentQuotations: [] };
+  const stats = result.success && result.data ? result.data : { totalRevenue: 0, customers: 0, recentInvoices: [], recentQuotations: [], recentDeliveryChallans: [] };
+
+  let overdueAmount = 0;
+  let overdueCount = 0;
+  
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  stats.recentInvoices.forEach((inv: any) => {
+    if (inv.status === 'Pending' && inv.dueDate) {
+      const due = new Date(inv.dueDate);
+      if (due < today) {
+        overdueAmount += inv.amount;
+        overdueCount++;
+      }
+    }
+  });
 
   return (
     <div className="h-full overflow-y-auto bg-slate-50 font-sans pb-20">
@@ -16,8 +32,8 @@ export default async function Dashboard() {
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Enterprise Overview</h1>
-            <p className="text-sm text-slate-500 mt-1 font-medium">Power Lines Electrical Works — Real-time Financial Insight</p>
+            <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight" style={{color:"orange"}}>Power Lines Electrical Works</h1>
+            {/* <p className="text-sm text-slate-500 mt-1 font-medium">Real-time Financial Insight</p> */}
           </div>
           <div className="hidden md:flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm">
             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -36,13 +52,12 @@ export default async function Dashboard() {
             badgeColor="text-emerald-700 bg-emerald-50 border-emerald-200"
           />
           <StatCard
-            icon={<Clock className="w-5 h-5 text-amber-500" />}
-            iconBg="bg-amber-50"
-            label="Pending Amount"
-            value="₹ 0"
-            badge="N/A"
-            badgeColor="text-slate-500 bg-slate-100 border-slate-200"
-            muted
+            icon={<AlertCircle className="w-5 h-5 text-red-600" />}
+            iconBg="bg-red-50"
+            label="Overdue Balance"
+            value={`₹ ${overdueAmount.toLocaleString('en-IN')}`}
+            badge={`${overdueCount} Invoices`}
+            badgeColor="text-red-700 bg-red-50 border-red-200"
           />
           <StatCard
             icon={<Users className="w-5 h-5 text-blue-600" />}
@@ -66,6 +81,7 @@ export default async function Dashboard() {
         <DashboardManager 
           invoices={stats.recentInvoices} 
           quotations={stats.recentQuotations} 
+          deliveryChallans={stats.recentDeliveryChallans || []}
         />
 
       </div>

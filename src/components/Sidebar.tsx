@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, FileText, Quote, Users, Settings, Zap, Database, ChevronLeft, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, FileText, Quote, Users, Settings, Zap, Database, ChevronLeft, ChevronRight, Building2, Package, Truck } from 'lucide-react';
 import Image from 'next/image';
 import { useState } from 'react';
 
@@ -10,6 +10,10 @@ const navItems = [
   { href: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { href: '/invoices/new', icon: FileText, label: 'New Invoice' },
   { href: '/quotations/new', icon: Quote, label: 'Quotations' },
+  { href: '/delivery-challan', icon: Truck, label: 'Delivery Challan' },
+  { href: '/clients', icon: Building2, label: 'Clients CRM' },
+  { href: '/inventory', icon: Package, label: 'Inventory' },
+  { href: '/motor-quotations', icon: Zap, label: 'Motor Quotation' },
   { href: '/gst-reports', icon: Database, label: 'GST Returns' },
   { href: '/attendance', icon: Users, label: 'Staff & Payroll' },
   { href: '#', icon: Settings, label: 'Settings' },

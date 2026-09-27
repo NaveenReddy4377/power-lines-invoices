@@ -32,11 +32,11 @@ export default function InvoicePreview({ data }: { data: InvoiceData }) {
   const cgstAmt = Number((sumTotal * (cgstRate / 100)).toFixed(2));
   const sgstAmt = Number((sumTotal * (sgstRate / 100)).toFixed(2));
 
-  const grandTotal = Math.round(sumTotal + cgstAmt + sgstAmt);
+  const grandTotal = sumTotal + cgstAmt + sgstAmt;
   const words = numberToWords(grandTotal);
 
   return (
-    <div className="w-[210mm] shrink-0 font-sans mx-auto relative text-black bg-white pb-6 print:pb-0" id="pdf-wrapper" style={{padding:"10px"}}>
+    <div className="w-[210mm] shrink-0 mx-auto relative text-black bg-white pb-6 print:pb-0 font-sans" id="pdf-wrapper" style={{padding:"10px", fontFamily: "Arial, Helvetica, sans-serif"}}>
       
       {/* Top Header Row (Outside the main border box) */}
       <div className="flex justify-between items-end pb-2 px-1">
@@ -59,7 +59,7 @@ export default function InvoicePreview({ data }: { data: InvoiceData }) {
                 <div className="flex border-b border-black h-24">
                   <div className="w-1/4 p-4 flex items-center justify-center border-r border-black/10">
                     <div className="flex items-center justify-center p-2 w-full h-full">
-                     <img src="/plew-logo.png" alt="Power Lines Logo" className="max-h-full max-w-full object-contain" />
+                     <img src="/plew-logo.jpg" alt="Power Lines Logo" className="max-h-full max-w-full object-contain" />
                     </div>
                   </div>
                   <div className="flex-1 p-3 text-center">
@@ -80,18 +80,22 @@ export default function InvoicePreview({ data }: { data: InvoiceData }) {
                 </div>
 
                 {/* Invoice Meta */}
-                <div className="flex text-center divide-x divide-black border-b border-black">
-                  <div className="flex-1 p-2 flex flex-col items-start px-4">
-                    <div className="font-bold text-xs pb-1">Invoice No.</div>
-                    <div className="text-sm font-medium">{data.invoiceNo || '-'}</div>
+                <div className="flex text-center divide-x divide-black border-b border-black min-h-[44px]">
+                  <div className="flex-1 p-2 flex flex-col items-center justify-center">
+                    <div className="font-bold text-[10px] pb-0.5 text-slate-700">Invoice No.</div>
+                    <div className="text-xs font-bold">{data.invoiceNo || '-'}</div>
                   </div>
-                  <div className="flex-1 p-2 flex flex-col items-center">
-                    <div className="font-bold text-xs pb-1">Invoice Date</div>
-                    <div className="text-sm">{(data.invoiceDate || '').split('-').reverse().join('/')}</div>
+                  <div className="flex-1 p-2 flex flex-col items-center justify-center">
+                    <div className="font-bold text-[10px] pb-0.5 text-slate-700">Invoice Date</div>
+                    <div className="text-xs font-semibold">{(data.invoiceDate || '').split('-').reverse().join('/')}</div>
                   </div>
-                  <div className="flex-1 p-2 flex flex-col items-center">
-                    <div className="font-bold text-xs pb-1">Due Date</div>
-                    <div className="text-sm">{(data.dueDate || data.invoiceDate || '').split('-').reverse().join('/')}</div>
+                  <div className="flex-1 p-2 flex flex-col items-center justify-center">
+                    <div className="font-bold text-[10px] pb-0.5 text-slate-700">PO / Gatepass No.</div>
+                    <div className="text-xs font-bold">{data.poNumber || '-'}</div>
+                  </div>
+                  <div className="flex-1 p-2 flex flex-col items-center justify-center">
+                    <div className="font-bold text-[10px] pb-0.5 text-slate-700">PO Date</div>
+                    <div className="text-xs font-semibold">{(data.poDate || '').split('-').reverse().join('/') || '-'}</div>
                   </div>
                 </div>
 
@@ -178,8 +182,8 @@ export default function InvoicePreview({ data }: { data: InvoiceData }) {
             <td className="border-r border-black p-1"></td>
             <td className="border-r border-black p-1 text-center">{sumQty}</td>
             <td className="border-r border-black p-1 text-right"></td>
-            <td className="border-r border-black p-1 text-center font-medium">₹ {sumDiscount.toLocaleString('en-IN')}</td>
-            <td className="p-1 px-2 text-right">₹ {grandTotal.toLocaleString('en-IN')}</td>
+            <td className="border-r border-black p-1 text-center font-medium">₹ {sumDiscount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+            <td className="p-1 px-2 text-right">₹ {grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
           </tr>
 
           <tr className="break-inside-avoid border-b border-black">
@@ -204,21 +208,21 @@ export default function InvoicePreview({ data }: { data: InvoiceData }) {
                 <tbody>
                   <tr>
                     <td className="p-1 border-r border-black border-b border-black">-</td>
-                    <td className="p-1 border-r border-black border-b border-black text-right pr-2">{sumTotal.toLocaleString('en-IN')}</td>
+                    <td className="p-1 border-r border-black border-b border-black text-right pr-2">{sumTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td className="p-1 border-r border-black border-b border-black text-right">{cgstRate}%</td>
-                    <td className="p-1 border-r border-black border-b border-black text-right pr-2">{cgstAmt.toLocaleString('en-IN')}</td>
+                    <td className="p-1 border-r border-black border-b border-black text-right pr-2">{cgstAmt.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td className="p-1 border-r border-black border-b border-black text-right">{sgstRate}%</td>
-                    <td className="p-1 border-r border-black border-b border-black text-right pr-2">{sgstAmt.toLocaleString('en-IN')}</td>
-                    <td className="p-1 border-b border-black text-right pr-2 font-medium">₹ {(cgstAmt + sgstAmt).toLocaleString('en-IN')}</td>
+                    <td className="p-1 border-r border-black border-b border-black text-right pr-2">{sgstAmt.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="p-1 border-b border-black text-right pr-2 font-medium">₹ {(cgstAmt + sgstAmt).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   </tr>
                   <tr className="font-bold">
                     <td className="p-1 border-r border-black text-right pr-2">Total</td>
-                    <td className="p-1 border-r border-black text-right pr-2">{sumTotal.toLocaleString('en-IN')}</td>
+                    <td className="p-1 border-r border-black text-right pr-2">{sumTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td className="p-1 border-r border-black"></td>
-                    <td className="p-1 border-r border-black text-right pr-2">{cgstAmt.toLocaleString('en-IN')}</td>
+                    <td className="p-1 border-r border-black text-right pr-2">{cgstAmt.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td className="p-1 border-r border-black"></td>
-                    <td className="p-1 border-r border-black text-right pr-2">{sgstAmt.toLocaleString('en-IN')}</td>
-                    <td className="p-1 text-right pr-2">₹ {(cgstAmt + sgstAmt).toLocaleString('en-IN')}</td>
+                    <td className="p-1 border-r border-black text-right pr-2">{sgstAmt.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="p-1 text-right pr-2">₹ {(cgstAmt + sgstAmt).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   </tr>
                 </tbody>
               </table>

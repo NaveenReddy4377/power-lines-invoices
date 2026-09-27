@@ -22,6 +22,7 @@ export default function AttendancePage() {
     
     // For dropdown on staff row
     const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+    const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
         loadData();
@@ -34,7 +35,12 @@ export default function AttendancePage() {
 
     const saveData = async (newData: StaffDBSchema) => {
         setDb({ ...newData });
-        await saveStaffData(newData);
+        setIsSaving(true);
+        try {
+            await saveStaffData(newData);
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     if (!db) return <div className="p-8 animate-pulse text-slate-400">Loading Staff Systems...</div>;
@@ -52,15 +58,53 @@ export default function AttendancePage() {
         else if(status === 'WO') weeklyOff++;
     });
 
+    const isSunday = new Date(currentDate).getDay() === 0;
+
     const markStatus = (staffId: string, status: AttendanceStatus) => {
-        const updated = { ...db };
-        if (!updated.attendance[currentDate]) {
-            updated.attendance[currentDate] = {};
+        const updated = { 
+            ...db, 
+            attendance: { 
+                ...db.attendance,
+                [currentDate]: { 
+                    ...(db.attendance[currentDate] || {}),
+                    [staffId]: { 
+                        ...(db.attendance[currentDate]?.[staffId] || { overtime: 0 }),
+                        status 
+                    }
+                }
+            } 
+        };
+        saveData(updated);
+        setOpenDropdown(null);
+    };
+
+    const markOvertime = (staffId: string, amount: number) => {
+        let finalAmount = amount;
+        const currentOvertime = db.attendance[currentDate]?.[staffId]?.overtime || 0;
+
+        if (!isSunday && amount > 0) {
+            const hrs = prompt(`Enter OT hours for ${db.staff.find(s => s.id === staffId)?.name || 'staff'}:`, String(currentOvertime));
+            if (hrs === null) {
+                setOpenDropdown(null);
+                return;
+            }
+            finalAmount = parseFloat(hrs) || 0;
         }
-        if (!updated.attendance[currentDate][staffId]) {
-            updated.attendance[currentDate][staffId] = { status: null, overtime: 0 };
-        }
-        updated.attendance[currentDate][staffId].status = status;
+
+        const updated = { 
+            ...db, 
+            attendance: { 
+                ...db.attendance,
+                [currentDate]: { 
+                    ...(db.attendance[currentDate] || {}),
+                    [staffId]: { 
+                        ...(db.attendance[currentDate]?.[staffId] || { status: null }),
+                        overtime: finalAmount 
+                    }
+                }
+            } 
+        };
+        
         saveData(updated);
         setOpenDropdown(null);
     };
@@ -104,8 +148,9 @@ export default function AttendancePage() {
                 
                 {/* Date Navigator */}
                 <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-                    <div className="text-xl font-bold text-slate-800">
-                        {currentDate.split('-').reverse().join('-')}  {/* Display as DD-MM-YYYY natively to avoid JS Date parsing confusion */}
+                    <div className={`text-xl font-bold flex items-center gap-2 ${isSunday ? 'text-orange-600' : 'text-slate-800'}`}>
+                        {currentDate.split('-').reverse().join('-')}
+                        {isSunday && <span className="text-xs bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full uppercase tracking-wider">Weekly Off</span>}
                     </div>
                     <div className="flex bg-white rounded border border-slate-200 shadow-sm overflow-hidden text-sm">
                         <button onClick={() => shiftDate(-1)} className="px-3 py-1.5 hover:bg-slate-50 border-r border-slate-200 text-slate-500 font-bold"><ChevronLeft className="w-5 h-5" /></button>
@@ -114,6 +159,12 @@ export default function AttendancePage() {
                         </button>
                         <button onClick={() => shiftDate(1)} className="px-3 py-1.5 hover:bg-slate-50 border-l border-slate-200 text-slate-500 font-bold"><ChevronRight className="w-5 h-5" /></button>
                     </div>
+                    {isSaving && (
+                        <div className="flex items-center gap-2 text-indigo-600 animate-pulse bg-indigo-50 px-3 py-1 rounded-full border border-indigo-100">
+                            <div className="w-2 h-2 bg-indigo-600 rounded-full"></div>
+                            <span className="text-xs font-bold uppercase tracking-wider">Syncing with Sheet...</span>
+                        </div>
+                    )}
                 </div>
 
                 {/* Main Table View */}
@@ -168,6 +219,14 @@ export default function AttendancePage() {
                                     
                                     {/* Action Buttons */}
                                     <div className="flex gap-2 items-center relative">
+                                        {isSunday && !currentStatus && (
+                                            <div className="absolute -top-6 left-0 text-[10px] text-orange-500 font-bold whitespace-nowrap animate-pulse">Sunday Off Suggested</div>
+                                        )}
+                                        {todaysLogs[staff.id]?.overtime > 0 && (
+                                            <div className="absolute -top-6 right-8 text-[10px] bg-red-100 text-red-600 px-1.5 rounded font-black">
+                                                {isSunday ? `+${todaysLogs[staff.id].overtime} OT Day` : `+${todaysLogs[staff.id].overtime} OT Hrs`}
+                                            </div>
+                                        )}
                                         <button 
                                             onClick={() => markStatus(staff.id, 'P')}
                                             className={`px-3 py-1 border rounded text-xs font-bold transition-colors ${currentStatus === 'P' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'text-slate-500 border-slate-200 hover:bg-slate-50'}`}>
@@ -190,10 +249,13 @@ export default function AttendancePage() {
                                                     <button className="w-full text-left px-4 py-2 hover:bg-slate-50" onClick={() => markStatus(staff.id, 'HD')}>Half day</button>
                                                     <button className="w-full text-left px-4 py-2 hover:bg-slate-50" onClick={() => markStatus(staff.id, 'PL')}>Paid leave</button>
                                                     <button className="w-full text-left px-4 py-2 hover:bg-slate-50" onClick={() => markStatus(staff.id, 'WO')}>Week off</button>
-                                                    <button className="w-full text-left px-4 py-2 hover:bg-indigo-50 text-indigo-600" onClick={() => {
-                                                        // Trigger payroll or advance? For now just close.
-                                                        setOpenDropdown(null);
-                                                    }}>Add overtime</button>
+                                                    {todaysLogs[staff.id]?.overtime > 0 ? (
+                                                        <button className="w-full text-left px-4 py-2 hover:bg-red-50 text-red-600 font-bold" onClick={() => markOvertime(staff.id, 0)}>Remove Overtime</button>
+                                                    ) : (
+                                                        <button className="w-full text-left px-4 py-2 hover:bg-indigo-50 text-indigo-600 font-bold" onClick={() => markOvertime(staff.id, 1)}>
+                                                            {isSunday ? '+ Add OT Day' : '+ Add OT Hours'}
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </>
                                         )}
@@ -277,22 +339,38 @@ function StaffDetailsOverlay({ staffId, db, onClose, saveData }: {staffId: strin
 
     // Mark specific day
     const markDayStatus = (date: string, status: AttendanceStatus) => {
-        const updated = { ...db };
-        if (!updated.attendance[date]) updated.attendance[date] = {};
-        if (!updated.attendance[date][staffId]) updated.attendance[date][staffId] = { status: null, overtime: 0 };
-        updated.attendance[date][staffId].status = status;
+        const updated = { 
+            ...db, 
+            attendance: { 
+                ...db.attendance,
+                [date]: { 
+                    ...(db.attendance[date] || {}),
+                    [staffId]: { 
+                        ...(db.attendance[date]?.[staffId] || { overtime: 0 }),
+                        status 
+                    }
+                }
+            } 
+        };
         saveData(updated);
     };
 
     // Stats for the month
-    let P = 0, A = 0, HD = 0, PL = 0, WO = 0;
+    let P = 0, A = 0, HD = 0, PL = 0, WO = 0, OT_Days = 0, OT_Hrs = 0;
     strict30Days.forEach(date => {
-        const status = db.attendance[date]?.[staffId]?.status;
+        const rec = db.attendance[date]?.[staffId];
+        const status = rec?.status;
         if (status === 'P') P++;
         else if (status === 'A') A++;
         else if (status === 'HD') HD++;
         else if (status === 'PL') PL++;
         else if (status === 'WO') WO++;
+        
+        const currentIsSun = new Date(date).getDay() === 0;
+        if (rec?.overtime) {
+            if (currentIsSun) OT_Days += rec.overtime;
+            else OT_Hrs += rec.overtime;
+        }
     });
 
     return (
@@ -375,8 +453,8 @@ function StaffDetailsOverlay({ staffId, db, onClose, saveData }: {staffId: strin
                                         <div><div className="text-slate-500 text-xs mb-1">Present (P)</div><div className="font-bold text-slate-800 text-base">{P}</div></div>
                                         <div><div className="text-slate-500 text-xs mb-1">Absent (A)</div><div className="font-bold text-slate-800 text-base">{A}</div></div>
                                         <div><div className="text-slate-500 text-xs mb-1">Half day (HD)</div><div className="font-bold text-slate-800 text-base">{HD}</div></div>
-                                        <div><div className="text-slate-500 text-xs mb-1">Paid Leave (PL)</div><div className="font-bold text-slate-800 text-base">{PL}</div></div>
-                                        <div><div className="text-slate-500 text-xs mb-1">Weekly off (WO)</div><div className="font-bold text-slate-800 text-base">{WO}</div></div>
+                                        <div><div className="text-slate-500 text-xs mb-1 text-orange-600 font-bold">Extra Days (OT)</div><div className="font-black text-orange-600 text-base">{OT_Days}</div></div>
+                                        <div><div className="text-slate-500 text-xs mb-1 text-red-600 font-bold">OT Hours</div><div className="font-black text-red-600 text-base">{OT_Hrs}</div></div>
                                     </div>
 
                                     {/* Table Headers */}
@@ -415,6 +493,63 @@ function StaffDetailsOverlay({ staffId, db, onClose, saveData }: {staffId: strin
                                                                 <button className="w-full text-left px-4 py-2 hover:bg-slate-50" onClick={() => markDayStatus(date, 'HD')}>Half day</button>
                                                                 <button className="w-full text-left px-4 py-2 hover:bg-slate-50" onClick={() => markDayStatus(date, 'PL')}>Paid leave</button>
                                                                 <button className="w-full text-left px-4 py-2 hover:bg-slate-50" onClick={() => markDayStatus(date, 'WO')}>Week off</button>
+                                                                <div className="border-t border-slate-100 my-1"></div>
+                                                                {db.attendance[date]?.[staffId]?.overtime > 0 ? (
+                                                                    <button className="w-full text-left px-4 py-2 hover:bg-red-50 text-red-600 font-bold" onClick={() => {
+                                                                        const updated = {
+                                                                            ...db,
+                                                                            attendance: {
+                                                                                ...db.attendance,
+                                                                                [date]: {
+                                                                                    ...(db.attendance[date] || {}),
+                                                                                    [staffId]: {
+                                                                                        ...(db.attendance[date]?.[staffId] || { status: null }),
+                                                                                        overtime: 0
+                                                                                    }
+                                                                                }
+                                                                            }
+                                                                        };
+                                                                        saveData(updated);
+                                                                    }}>{new Date(date).getDay() === 0 ? 'Remove OT Day' : 'Clear OT Hours'}</button>
+                                                                ) : (
+                                                                    <button className="w-full text-left px-4 py-2 hover:bg-orange-50 text-orange-600 font-bold" onClick={() => {
+                                                                        const isSun = new Date(date).getDay() === 0;
+                                                                        if (isSun) {
+                                                                            const updated = {
+                                                                                ...db,
+                                                                                attendance: {
+                                                                                    ...db.attendance,
+                                                                                    [date]: {
+                                                                                        ...(db.attendance[date] || {}),
+                                                                                        [staffId]: {
+                                                                                            ...(db.attendance[date]?.[staffId] || { status: null }),
+                                                                                            overtime: 1
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                            };
+                                                                            saveData(updated);
+                                                                        } else {
+                                                                            const hrs = prompt(`Enter OT hours:`, String(db.attendance[date]?.[staffId]?.overtime || ''));
+                                                                            if (hrs !== null) {
+                                                                                const updated = {
+                                                                                    ...db,
+                                                                                    attendance: {
+                                                                                        ...db.attendance,
+                                                                                        [date]: {
+                                                                                            ...(db.attendance[date] || {}),
+                                                                                            [staffId]: {
+                                                                                                ...(db.attendance[date]?.[staffId] || { status: null }),
+                                                                                                overtime: parseFloat(hrs) || 0
+                                                                                            }
+                                                                                        }
+                                                                                    }
+                                                                                };
+                                                                                saveData(updated);
+                                                                            }
+                                                                        }
+                                                                    }}>{new Date(date).getDay() === 0 ? '+ Add OT Day' : '+ Add OT Hours'}</button>
+                                                                )}
                                                             </div>
                                                         </div>
                                                     </div>
@@ -434,8 +569,12 @@ function StaffDetailsOverlay({ staffId, db, onClose, saveData }: {staffId: strin
                             // HD counts as 0.5 absent (deducts 0.5 day)
                             const absentDeductions = A + (HD * 0.5);
                             const workingDays = Math.max(0, 30 - absentDeductions);
+                            const extraDays = OT_Days;
+                            const extraHours = OT_Hrs;
                             const perDay = (staff.monthlySalary || 0) / 30;
-                            const grossPay = workingDays * perDay;
+                            const perHour = perDay / 8;
+                            const otPay = (extraDays * perDay) + (extraHours * perHour);
+                            const grossPay = (workingDays * perDay) + otPay;
                             const advanceBalance = getBalance(staff);
                             const finalPay = Math.max(0, grossPay - advanceBalance);
 
@@ -455,15 +594,15 @@ function StaffDetailsOverlay({ staffId, db, onClose, saveData }: {staffId: strin
                                         <div className="text-3xl font-black text-amber-700">{HD}</div>
                                     </div>
 
-                                    <div className="bg-blue-50 border border-blue-200 p-5 rounded-xl text-center shadow-sm flex flex-col justify-center">
-                                        <div className="text-xs font-bold text-blue-600 mb-1">{workingDays} Working Days</div>
-                                        <div className="text-2xl font-black text-blue-800">₹{grossPay.toLocaleString('en-IN', {maximumFractionDigits:0})} Earned</div>
-                                    </div>
                                     <div className="bg-orange-50 border border-orange-200 p-5 rounded-xl text-center shadow-sm flex flex-col justify-center">
-                                        <div className="text-xs font-bold text-orange-600 mb-1">Advance Balance</div>
-                                        <div className="text-2xl font-black text-orange-800">- ₹{advanceBalance.toLocaleString('en-IN', {maximumFractionDigits:0})}</div>
+                                        <div className="text-xs font-bold text-orange-600 mb-1">Sunday OT</div>
+                                        <div className="text-2xl font-black text-orange-700">{extraDays} Days</div>
                                     </div>
-                                    <div className="bg-green-600 border border-green-700 p-5 rounded-xl text-center shadow-sm flex flex-col justify-center text-white">
+                                    <div className="bg-red-50 border border-red-200 p-5 rounded-xl text-center shadow-sm flex flex-col justify-center">
+                                        <div className="text-xs font-bold text-red-600 mb-1">Weekday OT Hours</div>
+                                        <div className="text-2xl font-black text-red-700">{extraHours} hrs</div>
+                                    </div>
+                                    <div className="bg-green-600 border border-green-700 p-5 rounded-xl text-center shadow-sm flex flex-col justify-center text-white col-span-3">
                                         <div className="text-xs font-bold text-green-100 mb-1">Final Net Payable</div>
                                         <div className="text-3xl font-black text-white">₹{finalPay.toLocaleString('en-IN', {maximumFractionDigits:0})}</div>
                                     </div>
@@ -481,7 +620,7 @@ function StaffDetailsOverlay({ staffId, db, onClose, saveData }: {staffId: strin
                                         <span className="font-bold text-red-500">30 − {absentDeductions} = {workingDays} working days</span>
                                     </div>
                                     <div className="flex justify-between items-center bg-white p-4 rounded border border-slate-100">
-                                        <span>Gross Pay ({workingDays} days × ₹{perDay.toFixed(2)}):</span>
+                                        <span>Income ({workingDays} working days + {extraDays} Sunday OT + {extraHours} Weekday hrs):</span>
                                         <span className="font-bold">₹{grossPay.toFixed(2)}</span>
                                     </div>
                                     <div className="flex justify-between items-center bg-white p-4 rounded border border-slate-100 text-red-500">
@@ -498,7 +637,7 @@ function StaffDetailsOverlay({ staffId, db, onClose, saveData }: {staffId: strin
                                 
                                 <div className="mt-8 flex justify-end gap-4">
                                     <button onClick={() => {
-                                        const msg = `Hello ${staff.name},\nYour payroll for ${selectedMonth}:\n- Absent Days: ${A}${HD > 0 ? `, Half Days: ${HD}` : ''}\n- Working Days: ${workingDays}/30\n- Gross Pay: ₹${grossPay.toFixed(2)}\n- Advance Deductions: ₹${advanceBalance.toFixed(2)}\n- Final Net Payable: ₹${finalPay.toFixed(2)}\n\nThank you,\nPower Lines Electrical Works`;
+                                        const msg = `Hello ${staff.name},\nYour payroll for ${selectedMonth}:\n- Absent Days: ${A}${HD > 0 ? `, Half Days: ${HD}` : ''}\n- Working Days: ${workingDays.toFixed(1)}/30\n- Sunday OT (Days): ${extraDays}\n- Weekday OT (Hours): ${extraHours}\n- Gross Pay: ₹${grossPay.toFixed(2)}\n- Advance Deductions: ₹${advanceBalance.toFixed(2)}\n- Final Net Payable: ₹${finalPay.toFixed(2)}\n\nThank you,\nPower Lines Electrical Works`;
                                         window.open(`https://wa.me/91${staff.mobile}?text=${encodeURIComponent(msg)}`, '_blank');
                                     }} className="px-6 py-3 bg-green-500 text-white rounded font-bold hover:bg-green-600 flex items-center gap-2 shadow-sm">
                                         <Send className="w-5 h-5" /> Send WhatsApp
