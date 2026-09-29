@@ -325,4 +325,65 @@ export const initialCashBillData: CashBillData = {
   status: 'Paid'
 };
 
+// ─── Pending Bills & Follow-ups Module ─────────────────────────────────────────
+
+export interface BillFollowUp {
+  id: string;
+  date: string;               // YYYY-MM-DD
+  time?: string;              // e.g. 11:30 AM
+  followedUpBy: string;       // Staff / Person who followed up
+  contactPerson?: string;     // Person spoken with at customer's company
+  contactPhone?: string;      // Phone number
+  mode: 'Phone Call' | 'WhatsApp' | 'In-Person' | 'Email';
+  notes: string;              // Conversation notes / remarks
+  promisedDate?: string;      // Promised payment date (YYYY-MM-DD)
+  nextFollowUpDate?: string;  // Next scheduled follow-up (YYYY-MM-DD)
+  emailTriggered?: boolean;   // Whether alert was emailed to Sai Reddy
+}
+
+export interface PendingBill {
+  id: string;
+  billName: string;           // Customer / Company / Party name
+  billNo: string;             // Invoice No, Cash Bill No, or Reference No
+  billType: 'Invoice' | 'Cash Bill' | 'Quotation' | 'Manual / Direct';
+  pendingAmount: number;      // Outstanding balance amount in ₹
+  totalAmount?: number;       // Original total bill amount
+  billDate?: string;          // YYYY-MM-DD
+  dueDate?: string;           // YYYY-MM-DD
+  contactPerson?: string;     // Primary contact person
+  contactPhone?: string;      // Primary phone / mobile
+  contactEmail?: string;      // Customer email
+  status: 'Pending' | 'Follow-up Done' | 'Promised Payment' | 'Partially Paid' | 'Cleared / Paid';
+  promisedDate?: string;      // Latest promised payment date
+  lastFollowUpDate?: string;  // Date of most recent follow up
+  nextFollowUpDate?: string;  // Date of next planned follow up
+  notes?: string;             // General notes / account history
+  followUps: BillFollowUp[];  // Chronological follow-up timeline
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const initialPendingBillData: PendingBill = {
+  id: '',
+  billName: '',
+  billNo: '',
+  billType: 'Invoice',
+  pendingAmount: 0,
+  totalAmount: 0,
+  billDate: new Date().toISOString().split('T')[0],
+  dueDate: '',
+  contactPerson: '',
+  contactPhone: '',
+  contactEmail: '',
+  status: 'Pending',
+  promisedDate: '',
+  lastFollowUpDate: '',
+  nextFollowUpDate: '',
+  notes: '',
+  followUps: [],
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+};
+
+
 

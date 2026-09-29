@@ -105,5 +105,37 @@ create policy "Enable full access for all operations" on public.delivery_challan
 drop policy if exists "Enable full access for all operations" on public.quotations;
 create policy "Enable full access for all operations" on public.quotations for all using (true) with check (true);
 
-drop policy if exists "Enable full access for all operations" on public.clients;
-create policy "Enable full access for all operations" on public.clients for all using (true) with check (true);
+-- 6. Pending Bills & Follow-ups Table
+create table if not exists public.pending_bills (
+  id text primary key,
+  bill_name text not null,
+  bill_no text,
+  bill_type text default 'Invoice',
+  pending_amount numeric default 0,
+  total_amount numeric default 0,
+  bill_date date,
+  due_date date,
+  contact_person text,
+  contact_phone text,
+  contact_email text,
+  status text default 'Pending',
+  promised_date date,
+  last_follow_up_date date,
+  next_follow_up_date date,
+  notes text,
+  follow_ups jsonb default '[]'::jsonb,
+  raw_data jsonb,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+-- Indexes for pending bills
+create index if not exists idx_pending_bills_name on public.pending_bills(bill_name);
+create index if not exists idx_pending_bills_status on public.pending_bills(status);
+create index if not exists idx_pending_bills_due on public.pending_bills(due_date);
+create index if not exists idx_pending_bills_created on public.pending_bills(created_at desc);
+
+-- RLS policies
+alter table public.pending_bills enable row level security;
+drop policy if exists "Enable full access for all operations" on public.pending_bills;
+create policy "Enable full access for all operations" on public.pending_bills for all using (true) with check (true);

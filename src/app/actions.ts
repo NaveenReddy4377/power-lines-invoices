@@ -4,7 +4,7 @@ import { GoogleSpreadsheet } from 'google-spreadsheet';
 import { JWT } from 'google-auth-library';
 import fs from 'fs';
 import path from 'path';
-import { InvoiceData, QuotationData, Client, InventoryItem, DeliveryChallanData, CashBillData } from '@/types';
+import { InvoiceData, QuotationData, Client, InventoryItem, DeliveryChallanData, CashBillData, PendingBill, BillFollowUp } from '@/types';
 import legacyCompanies from '@/data/companies.json';
 import {
   syncInvoiceToSupabase,
@@ -12,7 +12,25 @@ import {
   syncDeliveryChallanToSupabase,
   syncQuotationToSupabase,
   syncClientToSupabase,
+  syncPendingBillToSupabase,
+  fetchInvoiceFromSupabase,
+  fetchQuotationFromSupabase,
+  fetchDeliveryChallanFromSupabase,
+  fetchCashBillFromSupabase,
+  fetchInvoicesFromSupabase,
+  fetchQuotationsFromSupabase,
+  fetchDeliveryChallansFromSupabase,
+  fetchCashBillsFromSupabase,
+  fetchClientsFromSupabase,
+  fetchPendingBillsFromSupabase,
+  deletePendingBillFromSupabase,
+  fetchDescriptionsFromSupabase,
+  getLatestInvoiceNoFromSupabase,
+  getLatestQuotationNoFromSupabase,
+  getLatestDcNoFromSupabase,
+  getLatestCashBillNoFromSupabase,
 } from '@/lib/supabaseSync';
+import { sendPendingBillEmail } from '@/lib/pendingBillEmail';
 
 // Helper to get or create a named sheet tab
 async function getOrCreateSheet(doc: GoogleSpreadsheet, title: string) {
@@ -160,7 +178,7 @@ function compareIds(id1: string, id2: string): number {
   return id1.localeCompare(id2, undefined, { numeric: true, sensitivity: 'base' });
 }
 
-// Auto increment based on last row with 429 quota resilience
+// Auto increment based on last row with 429 quota resilience and Supabase fallback
 export async function getNextInvoiceNumber() {
   const defaultStart = "PLEW001231";
   try {
@@ -168,18 +186,26 @@ export async function getNextInvoiceNumber() {
     const sheet = doc.sheetsByIndex[0];
     const rows = await sheet.getRows();
     const latestId = getLastId(rows, 'Invoice No');
-    if (!latestId) {
-      return lastKnownInvoiceNo ? incrementId(lastKnownInvoiceNo, defaultStart) : defaultStart;
+    if (latestId) {
+      lastKnownInvoiceNo = latestId;
+      return incrementId(latestId, defaultStart);
     }
-    lastKnownInvoiceNo = latestId;
-    return incrementId(latestId, defaultStart);
   } catch (error: any) {
-    console.warn('getNextInvoiceNumber quota/connection issue, using fallback:', error.message);
-    if (lastKnownInvoiceNo) {
-      return incrementId(lastKnownInvoiceNo, defaultStart);
-    }
-    return defaultStart;
+    console.warn('getNextInvoiceNumber quota/connection issue, checking Supabase:', error.message);
   }
+
+  try {
+    const supaLatest = await getLatestInvoiceNoFromSupabase();
+    if (supaLatest) {
+      lastKnownInvoiceNo = supaLatest;
+      return incrementId(supaLatest, defaultStart);
+    }
+  } catch {}
+
+  if (lastKnownInvoiceNo) {
+    return incrementId(lastKnownInvoiceNo, defaultStart);
+  }
+  return defaultStart;
 }
 
 export async function saveToSpreadsheet(data: InvoiceData) {
@@ -230,15 +256,26 @@ export async function saveToSpreadsheet(data: InvoiceData) {
       'RawData': JSON.stringify(data),
     };
 
-    if (targetRow) {
-      targetRow.assign(rowObj);
-      await targetRow.save();
-    } else {
-      await sheet.addRow(rowObj);
-    }
+    // Save to Google Sheets and Supabase concurrently, awaiting both!
+    const sheetPromise = (async () => {
+      if (targetRow) {
+        targetRow.assign(rowObj);
+        await targetRow.save();
+      } else {
+        await sheet.addRow(rowObj);
+      }
+    })();
+    const supabasePromise = syncInvoiceToSupabase(data);
 
-    // Dual-write to Supabase in background
-    syncInvoiceToSupabase(data).catch(() => {});
+    const [sheetResult, supaResult] = await Promise.allSettled([sheetPromise, supabasePromise]);
+
+    if (sheetResult.status === 'rejected') {
+      console.error('Google Sheets save error for invoice:', sheetResult.reason);
+      if (supaResult.status === 'fulfilled' && supaResult.value.success) {
+        return { success: true, offline: true, note: 'Saved to Supabase database (Google Sheets write pending)' };
+      }
+      return { success: false, error: sheetResult.reason?.message || 'Failed to save invoice to Google Sheets' };
+    }
 
     return { success: true };
   } catch (error: any) {
@@ -248,6 +285,22 @@ export async function saveToSpreadsheet(data: InvoiceData) {
 }
 
 export async function loadInvoice(invoiceNo: string) {
+  if (!invoiceNo || !invoiceNo.trim()) {
+    return { success: false, error: 'Invoice number is required.' };
+  }
+  const cleanNo = invoiceNo.trim();
+
+  // 1. Fast lookup from Supabase first
+  try {
+    const supaData = await fetchInvoiceFromSupabase(cleanNo);
+    if (supaData) {
+      return { success: true, data: supaData };
+    }
+  } catch (e) {
+    console.warn('Supabase loadInvoice fallback:', e);
+  }
+
+  // 2. Fallback to Google Sheets
   try {
     const doc = await getSheetSafely();
     const sheet = doc.sheetsByIndex[0];
@@ -256,15 +309,16 @@ export async function loadInvoice(invoiceNo: string) {
 
     for (let i = 0; i < rows.length; i++) {
       const cellVal = rows[i].get('Invoice No') || '';
-      if (cellVal.toString().trim().toUpperCase() === invoiceNo.trim().toUpperCase()) {
+      if (cellVal.toString().trim().toUpperCase() === cleanNo.toUpperCase()) {
         const rawJson = rows[i].get('RawData');
         if (rawJson) {
           const parsed = JSON.parse(rawJson);
+          syncInvoiceToSupabase(parsed).catch(() => {});
           return { success: true, data: parsed };
         }
       }
     }
-    return { success: false, error: 'Invoice not found.' };
+    return { success: false, error: `Invoice "${cleanNo}" not found.` };
   } catch (error: any) {
     console.error('loadInvoice error:', error);
     return { success: false, error: 'Load failed: ' + error.message };
@@ -299,6 +353,40 @@ export async function getItemSuggestions(): Promise<string[]> {
 }
 
 export async function getDashboardStats() {
+  // 1. Fast lookup from Supabase first
+  try {
+    const [supaInvoices, supaQuotations, deliveryChallans, cashBills] = await Promise.all([
+      fetchInvoicesFromSupabase(),
+      fetchQuotationsFromSupabase(),
+      getDeliveryChallanList(),
+      getCashBillList(),
+    ]);
+
+    if (supaInvoices && supaQuotations) {
+      const customerSet = new Set<string>();
+      let totalRevenue = 0;
+      supaInvoices.forEach(inv => {
+        totalRevenue += Number(inv.amount || 0);
+        if (inv.customer) customerSet.add(inv.customer);
+      });
+
+      return {
+        success: true,
+        data: {
+          totalRevenue,
+          customers: customerSet.size,
+          recentInvoices: supaInvoices,
+          recentQuotations: supaQuotations,
+          recentDeliveryChallans: deliveryChallans,
+          recentCashBills: cashBills,
+        }
+      };
+    }
+  } catch (e) {
+    console.warn('Supabase getDashboardStats fallback to sheets:', e);
+  }
+
+  // 2. Fallback to Google Sheets
   const totalRevenue = { value: 0 };
   const customerSet = new Set();
   const recentInvoices: any[] = [];
@@ -417,18 +505,26 @@ export async function getNextQuotationNumber() {
     const sheet = await getOrCreateSheet(doc, 'Quotations');
     const rows = await sheet.getRows();
     const latestId = getLastId(rows, 'Quotation No');
-    if (!latestId) {
-      return lastKnownQuotationNo ? incrementId(lastKnownQuotationNo, defaultStart) : defaultStart;
+    if (latestId) {
+      lastKnownQuotationNo = latestId;
+      return incrementId(latestId, defaultStart);
     }
-    lastKnownQuotationNo = latestId;
-    return incrementId(latestId, defaultStart);
   } catch (error: any) {
-    console.warn('getNextQuotationNumber quota/connection issue, using fallback:', error.message);
-    if (lastKnownQuotationNo) {
-      return incrementId(lastKnownQuotationNo, defaultStart);
-    }
-    return defaultStart;
+    console.warn('getNextQuotationNumber quota/connection issue, checking Supabase:', error.message);
   }
+
+  try {
+    const supaLatest = await getLatestQuotationNoFromSupabase();
+    if (supaLatest) {
+      lastKnownQuotationNo = supaLatest;
+      return incrementId(supaLatest, defaultStart);
+    }
+  } catch {}
+
+  if (lastKnownQuotationNo) {
+    return incrementId(lastKnownQuotationNo, defaultStart);
+  }
+  return defaultStart;
 }
 
 export async function saveQuotation(data: QuotationData) {
@@ -467,15 +563,26 @@ export async function saveQuotation(data: QuotationData) {
       }
     }
 
-    if (targetRow) {
-      targetRow.assign(rowObj);
-      await targetRow.save();
-    } else {
-      await sheet.addRow(rowObj);
-    }
+    // Save to Google Sheets and Supabase concurrently, awaiting both!
+    const sheetPromise = (async () => {
+      if (targetRow) {
+        targetRow.assign(rowObj);
+        await targetRow.save();
+      } else {
+        await sheet.addRow(rowObj);
+      }
+    })();
+    const supabasePromise = syncQuotationToSupabase(data);
 
-    // Dual-write to Supabase in background
-    syncQuotationToSupabase(data).catch(() => {});
+    const [sheetResult, supaResult] = await Promise.allSettled([sheetPromise, supabasePromise]);
+
+    if (sheetResult.status === 'rejected') {
+      console.error('Google Sheets quotation save error:', sheetResult.reason);
+      if (supaResult.status === 'fulfilled' && supaResult.value.success) {
+        return { success: true, offline: true, note: 'Saved to Supabase database (Google Sheets write pending)' };
+      }
+      return { success: false, error: sheetResult.reason?.message || 'Failed to save quotation to Google Sheets' };
+    }
 
     return { success: true };
   } catch (error: any) {
@@ -485,6 +592,22 @@ export async function saveQuotation(data: QuotationData) {
 }
 
 export async function loadQuotation(quotationNo: string) {
+  if (!quotationNo || !quotationNo.trim()) {
+    return { success: false, error: 'Quotation number is required.' };
+  }
+  const cleanNo = quotationNo.trim();
+
+  // 1. Fast lookup from Supabase first
+  try {
+    const supaData = await fetchQuotationFromSupabase(cleanNo);
+    if (supaData) {
+      return { success: true, data: supaData };
+    }
+  } catch (e) {
+    console.warn('Supabase loadQuotation fallback:', e);
+  }
+
+  // 2. Fallback to Google Sheets
   try {
     const doc = await getSheetSafely();
     const sheet = await getOrCreateSheet(doc, 'Quotations');
@@ -494,22 +617,23 @@ export async function loadQuotation(quotationNo: string) {
     let foundRow = null;
     for (const row of rows) {
       const cellVal = row.get('Quotation No') || '';
-      if (cellVal.toString().trim().toUpperCase() === quotationNo.trim().toUpperCase()) {
+      if (cellVal.toString().trim().toUpperCase() === cleanNo.toUpperCase()) {
         foundRow = row;
         break;
       }
     }
 
     if (!foundRow) {
-      return { success: false, error: `Quotation "${quotationNo}" not found in Google Sheets.` };
+      return { success: false, error: `Quotation "${cleanNo}" not found.` };
     }
 
     const raw = foundRow.get('RawData');
     if (!raw) {
-      return { success: false, error: `Quotation "${quotationNo}" found but has no data stored (RawData column is empty).` };
+      return { success: false, error: `Quotation "${cleanNo}" found but has no data stored.` };
     }
 
     const parsed = JSON.parse(raw) as QuotationData;
+    syncQuotationToSupabase(parsed).catch(() => {});
     return { success: true, data: parsed };
 
   } catch (error: any) {
@@ -792,6 +916,20 @@ export async function getClients(): Promise<Client[]> {
   if (cachedClients && cachedClients.length > 0 && (Date.now() - lastClientsLoadTime < DATA_CACHE_TTL)) {
     return cachedClients;
   }
+
+  // 1. Check Supabase first
+  try {
+    const supaClients = await fetchClientsFromSupabase();
+    if (supaClients && supaClients.length > 0) {
+      cachedClients = supaClients;
+      lastClientsLoadTime = Date.now();
+      return supaClients;
+    }
+  } catch (e) {
+    console.warn('Supabase getClients fallback:', e);
+  }
+
+  // 2. Fallback to Google Sheets
   try {
     const doc = await getSheetSafely(4000);
 
@@ -835,7 +973,7 @@ export async function getClients(): Promise<Client[]> {
   }
 }
 
-export async function saveClient(client: Client) {
+export async function saveClient(client: Client): Promise<{ success: boolean; error?: string }> {
   try {
     const doc = await getSheetSafely(4000);
     let sheet = doc.sheetsByTitle['Clients'];
@@ -858,16 +996,23 @@ export async function saveClient(client: Client) {
       'PlaceOfSupply': client.placeOfSupply
     };
 
-    if (targetRow) {
-      targetRow.assign(data);
-      await targetRow.save();
-    } else {
-      await sheet.addRow(data);
-    }
-    syncClientToSupabase(client).catch(() => {});
+    const sheetPromise = (async () => {
+      if (targetRow) {
+        targetRow.assign(data);
+        await targetRow.save();
+      } else {
+        await sheet.addRow(data);
+      }
+    })();
+    const supabasePromise = syncClientToSupabase(client);
+
+    await Promise.allSettled([sheetPromise, supabasePromise]);
+    cachedClients = null; // Invalidate cache
     return { success: true };
   } catch (e: any) {
     console.error('saveClient error:', e);
+    // Even if Google Sheets fails, still save to Supabase
+    await syncClientToSupabase(client).catch(() => {});
     return { success: false, error: e.message };
   }
 }
@@ -1099,29 +1244,50 @@ export async function getNextDeliveryChallanNumber() {
   try {
     const doc = await getSheetSafely();
     let sheet = doc.sheetsByTitle['Delivery Challans'];
-    if (!sheet) {
-      return lastKnownDcNo ? incrementId(lastKnownDcNo, defaultStart) : defaultStart;
+    if (sheet) {
+      await sheet.loadHeaderRow();
+      const rows = await sheet.getRows();
+      const latestId = getLastId(rows, 'DC No');
+      if (latestId) {
+        lastKnownDcNo = latestId;
+        return incrementId(latestId, defaultStart);
+      }
     }
-    
-    await sheet.loadHeaderRow();
-    const rows = await sheet.getRows();
-    const latestId = getLastId(rows, 'DC No');
-
-    if (!latestId) {
-      return lastKnownDcNo ? incrementId(lastKnownDcNo, defaultStart) : defaultStart;
-    }
-    lastKnownDcNo = latestId;
-    return incrementId(latestId, defaultStart);
   } catch (error: any) {
-    console.warn('getNextDeliveryChallanNumber quota/connection issue, using fallback:', error.message);
-    if (lastKnownDcNo) {
-      return incrementId(lastKnownDcNo, defaultStart);
-    }
-    return defaultStart;
+    console.warn('getNextDeliveryChallanNumber quota/connection issue, checking Supabase:', error.message);
   }
+
+  try {
+    const supaLatest = await getLatestDcNoFromSupabase();
+    if (supaLatest) {
+      lastKnownDcNo = supaLatest;
+      return incrementId(supaLatest, defaultStart);
+    }
+  } catch {}
+
+  if (lastKnownDcNo) {
+    return incrementId(lastKnownDcNo, defaultStart);
+  }
+  return defaultStart;
 }
 
 export async function loadDeliveryChallan(dcNo: string) {
+  if (!dcNo || !dcNo.trim()) {
+    return { success: false, error: 'Delivery Challan number is required.' };
+  }
+  const cleanNo = dcNo.trim();
+
+  // 1. Fast lookup from Supabase first
+  try {
+    const supaData = await fetchDeliveryChallanFromSupabase(cleanNo);
+    if (supaData) {
+      return { success: true, data: supaData };
+    }
+  } catch (e) {
+    console.warn('Supabase loadDeliveryChallan fallback:', e);
+  }
+
+  // 2. Fallback to Google Sheets
   try {
     const doc = await getSheetSafely(5000);
     const sheet = doc.sheetsByTitle['Delivery Challans'];
@@ -1255,19 +1421,30 @@ export async function saveDeliveryChallanToSpreadsheet(data: DeliveryChallanData
       'RawData': JSON.stringify(data),
     };
 
-    if (targetRow) {
-      targetRow.assign(rowObj);
-      await targetRow.save();
-    } else {
-      await sheet.addRow(rowObj);
-    }
-
     if (data.dcNo) {
       lastKnownDcNo = data.dcNo;
     }
 
-    // Dual-write to Supabase in background
-    syncDeliveryChallanToSupabase(data).catch(() => {});
+    // Save to Google Sheets and Supabase concurrently, awaiting both!
+    const sheetPromise = (async () => {
+      if (targetRow) {
+        targetRow.assign(rowObj);
+        await targetRow.save();
+      } else {
+        await sheet.addRow(rowObj);
+      }
+    })();
+    const supabasePromise = syncDeliveryChallanToSupabase(data);
+
+    const [sheetResult, supaResult] = await Promise.allSettled([sheetPromise, supabasePromise]);
+
+    if (sheetResult.status === 'rejected') {
+      console.error('Google Sheets challan save error:', sheetResult.reason);
+      if (supaResult.status === 'fulfilled' && supaResult.value.success) {
+        return { success: true, offline: true, note: 'Saved to Supabase database (Google Sheets write pending)' };
+      }
+      return { success: false, error: sheetResult.reason?.message || 'Failed to save delivery challan' };
+    }
 
     return { success: true, offline: false, error: undefined };
   } catch (error: any) {
@@ -1277,6 +1454,17 @@ export async function saveDeliveryChallanToSpreadsheet(data: DeliveryChallanData
 }
 
 export async function getDeliveryChallanList() {
+  // 1. Fast lookup from Supabase first
+  try {
+    const supaList = await fetchDeliveryChallansFromSupabase();
+    if (supaList && supaList.length > 0) {
+      return supaList;
+    }
+  } catch (e) {
+    console.warn('Supabase getDeliveryChallanList fallback:', e);
+  }
+
+  // 2. Fallback to Google Sheets
   const list: any[] = [];
 
   try {
@@ -1320,26 +1508,31 @@ export async function getNextCashBillNumber() {
   try {
     const doc = await getSheetSafely();
     let sheet = doc.sheetsByTitle['Cash Bills'];
-    if (!sheet) {
-      return lastKnownCashBillNo ? incrementId(lastKnownCashBillNo, defaultStart) : defaultStart;
+    if (sheet) {
+      await sheet.loadHeaderRow();
+      const rows = await sheet.getRows();
+      const latestId = getLastId(rows, 'Bill No');
+      if (latestId) {
+        lastKnownCashBillNo = latestId;
+        return incrementId(latestId, defaultStart);
+      }
     }
-    
-    await sheet.loadHeaderRow();
-    const rows = await sheet.getRows();
-    const latestId = getLastId(rows, 'Bill No');
-
-    if (!latestId) {
-      return lastKnownCashBillNo ? incrementId(lastKnownCashBillNo, defaultStart) : defaultStart;
-    }
-    lastKnownCashBillNo = latestId;
-    return incrementId(latestId, defaultStart);
   } catch (error: any) {
-    console.warn('getNextCashBillNumber error, using fallback:', error.message);
-    if (lastKnownCashBillNo) {
-      return incrementId(lastKnownCashBillNo, defaultStart);
-    }
-    return defaultStart;
+    console.warn('getNextCashBillNumber error, checking Supabase:', error.message);
   }
+
+  try {
+    const supaLatest = await getLatestCashBillNoFromSupabase();
+    if (supaLatest) {
+      lastKnownCashBillNo = supaLatest;
+      return incrementId(supaLatest, defaultStart);
+    }
+  } catch {}
+
+  if (lastKnownCashBillNo) {
+    return incrementId(lastKnownCashBillNo, defaultStart);
+  }
+  return defaultStart;
 }
 
 export async function saveCashBillToSpreadsheet(data: CashBillData) {
@@ -1391,8 +1584,26 @@ export async function saveCashBillToSpreadsheet(data: CashBillData) {
       lastKnownCashBillNo = data.billNo;
     }
 
-    // Dual-write to Supabase in background
-    syncCashBillToSupabase(data).catch(() => {});
+    // Save to Google Sheets and Supabase concurrently, awaiting both!
+    const sheetPromise = (async () => {
+      if (targetRow) {
+        targetRow.assign(rowObj);
+        await targetRow.save();
+      } else {
+        await sheet.addRow(rowObj);
+      }
+    })();
+    const supabasePromise = syncCashBillToSupabase(data);
+
+    const [sheetResult, supaResult] = await Promise.allSettled([sheetPromise, supabasePromise]);
+
+    if (sheetResult.status === 'rejected') {
+      console.error('Google Sheets cash bill save error:', sheetResult.reason);
+      if (supaResult.status === 'fulfilled' && supaResult.value.success) {
+        return { success: true, offline: true, note: 'Saved to Supabase database (Google Sheets write pending)' };
+      }
+      return { success: false, error: sheetResult.reason?.message || 'Failed to save cash bill' };
+    }
 
     return { success: true, offline: false, error: undefined };
   } catch (error: any) {
@@ -1402,6 +1613,22 @@ export async function saveCashBillToSpreadsheet(data: CashBillData) {
 }
 
 export async function loadCashBill(billNo: string) {
+  if (!billNo || !billNo.trim()) {
+    return { success: false, error: 'Cash Bill number is required.' };
+  }
+  const cleanNo = billNo.trim();
+
+  // 1. Fast lookup from Supabase first
+  try {
+    const supaData = await fetchCashBillFromSupabase(cleanNo);
+    if (supaData) {
+      return { success: true, data: supaData };
+    }
+  } catch (e) {
+    console.warn('Supabase loadCashBill fallback:', e);
+  }
+
+  // 2. Fallback to Google Sheets
   try {
     const doc = await getSheetSafely(5000);
     const sheet = doc.sheetsByTitle['Cash Bills'];
@@ -1414,11 +1641,12 @@ export async function loadCashBill(billNo: string) {
 
     for (let i = 0; i < rows.length; i++) {
       const cellVal = rows[i].get('Bill No') || '';
-      if (cellVal.toString().trim().toUpperCase() === billNo.trim().toUpperCase()) {
+      if (cellVal.toString().trim().toUpperCase() === cleanNo.toUpperCase()) {
         const rawJson = rows[i].get('RawData');
         if (rawJson) {
           try {
             const parsed = JSON.parse(rawJson);
+            syncCashBillToSupabase(parsed).catch(() => {});
             return { success: true, data: parsed as CashBillData };
           } catch (e) {
             console.error('Failed to parse CashBill RawData JSON:', e);
@@ -1426,7 +1654,7 @@ export async function loadCashBill(billNo: string) {
         }
 
         const reconstructed: CashBillData = {
-          billNo: rows[i].get('Bill No') || billNo,
+          billNo: rows[i].get('Bill No') || cleanNo,
           billDate: rows[i].get('Date') || new Date().toISOString().split('T')[0],
           paymentMode: (rows[i].get('Payment Mode') || 'Cash') as any,
           paymentStatus: (rows[i].get('Status') || 'Paid') as any,
@@ -1447,10 +1675,11 @@ export async function loadCashBill(billNo: string) {
           notes: '',
           status: (rows[i].get('Status') || 'Paid') as any
         };
+        syncCashBillToSupabase(reconstructed).catch(() => {});
         return { success: true, data: reconstructed };
       }
     }
-    return { success: false, error: `Cash Bill "${billNo}" not found.` };
+    return { success: false, error: `Cash Bill "${cleanNo}" not found.` };
   } catch (error: any) {
     console.error('loadCashBill error:', error);
     return { success: false, error: 'Load failed: ' + error.message };
@@ -1458,6 +1687,17 @@ export async function loadCashBill(billNo: string) {
 }
 
 export async function getCashBillList() {
+  // 1. Fast lookup from Supabase first
+  try {
+    const supaList = await fetchCashBillsFromSupabase();
+    if (supaList && supaList.length > 0) {
+      return supaList;
+    }
+  } catch (e) {
+    console.warn('Supabase getCashBillList fallback:', e);
+  }
+
+  // 2. Fallback to Google Sheets
   const list: any[] = [];
   try {
     const doc = await getSheetSafely(5000);
@@ -1522,6 +1762,17 @@ export async function getPreviousDescriptions(): Promise<DescriptionSuggestion[]
   COMMON_ELECTRICAL_DESCRIPTIONS.forEach(item => {
     map.set(item.description.toLowerCase(), item);
   });
+
+  // Try fast fetching from Supabase first
+  try {
+    const supaDescs = await fetchDescriptionsFromSupabase();
+    if (supaDescs && supaDescs.length > 0) {
+      supaDescs.forEach(item => {
+        map.set(item.description.toLowerCase(), item);
+      });
+      return Array.from(map.values());
+    }
+  } catch (e) {}
 
   try {
     const doc = await getSheetSafely(5000);
@@ -1939,3 +2190,348 @@ export async function importExistingSheetsToSupabase() {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ────────────────── PENDING BILLS & FOLLOW-UPS ACTIONS ───────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PENDING_BILLS_HEADERS = [
+  'ID',
+  'Bill Name',
+  'Bill No',
+  'Bill Type',
+  'Pending Amount (₹)',
+  'Total Amount (₹)',
+  'Bill Date',
+  'Due Date',
+  'Contact Person',
+  'Phone',
+  'Email',
+  'Status',
+  'Promised Date',
+  'Last Follow Up',
+  'Next Follow Up',
+  'Follow Up Count',
+  'RawData'
+];
+
+async function getOrCreatePendingBillsSheet(doc: GoogleSpreadsheet) {
+  let sheet = doc.sheetsByTitle['Pending Bills'];
+  if (!sheet) {
+    sheet = await doc.addSheet({ title: 'Pending Bills', headerValues: PENDING_BILLS_HEADERS });
+  } else {
+    try { await sheet.loadHeaderRow(); } catch (e) {}
+    try {
+      const headers = sheet.headerValues || [];
+      if (!headers.includes('ID') || !headers.includes('Bill Name')) {
+        await sheet.setHeaderRow(PENDING_BILLS_HEADERS);
+      }
+    } catch (e) {}
+  }
+  return sheet;
+}
+
+export async function getPendingBills(): Promise<PendingBill[]> {
+  // 1. Try Supabase first (lightning fast)
+  try {
+    const supaBills = await fetchPendingBillsFromSupabase();
+    if (supaBills && supaBills.length > 0) {
+      return supaBills;
+    }
+  } catch (e) {
+    console.warn('Supabase getPendingBills fallback:', e);
+  }
+
+  // 2. Fallback to Google Sheets
+  const bills: PendingBill[] = [];
+  try {
+    const doc = await getSheetSafely(6000);
+    const sheet = await getOrCreatePendingBillsSheet(doc);
+    const rows = await sheet.getRows();
+
+    rows.forEach(r => {
+      const id = r.get('ID');
+      const billName = r.get('Bill Name');
+      if (id && billName) {
+        const rawJson = r.get('RawData');
+        if (rawJson) {
+          try {
+            const parsed = JSON.parse(rawJson);
+            bills.push(parsed);
+            return;
+          } catch (e) {}
+        }
+
+        // Reconstruct from columns
+        bills.push({
+          id,
+          billName,
+          billNo: r.get('Bill No') || '',
+          billType: (r.get('Bill Type') || 'Invoice') as any,
+          pendingAmount: parseFloat(r.get('Pending Amount (₹)') || '0'),
+          totalAmount: parseFloat(r.get('Total Amount (₹)') || '0'),
+          billDate: r.get('Bill Date') || '',
+          dueDate: r.get('Due Date') || '',
+          contactPerson: r.get('Contact Person') || '',
+          contactPhone: r.get('Phone') || '',
+          contactEmail: r.get('Email') || '',
+          status: (r.get('Status') || 'Pending') as any,
+          promisedDate: r.get('Promised Date') || '',
+          lastFollowUpDate: r.get('Last Follow Up') || '',
+          nextFollowUpDate: r.get('Next Follow Up') || '',
+          notes: '',
+          followUps: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    });
+  } catch (err) {
+    console.error('getPendingBills error:', err);
+  }
+  return bills.sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime());
+}
+
+export async function savePendingBill(
+  bill: PendingBill,
+  triggerEmail: boolean = false
+): Promise<{ success: boolean; error?: string; bill?: PendingBill }> {
+  try {
+    const finalBill: PendingBill = {
+      ...bill,
+      id: bill.id || `PB-${Date.now().toString(36).toUpperCase()}`,
+      updatedAt: new Date().toISOString(),
+      createdAt: bill.createdAt || new Date().toISOString(),
+      followUps: bill.followUps || [],
+    };
+
+    const rowObj = {
+      'ID': finalBill.id,
+      'Bill Name': finalBill.billName,
+      'Bill No': finalBill.billNo || '',
+      'Bill Type': finalBill.billType || 'Invoice',
+      'Pending Amount (₹)': Number(finalBill.pendingAmount || 0).toFixed(2),
+      'Total Amount (₹)': Number(finalBill.totalAmount || finalBill.pendingAmount || 0).toFixed(2),
+      'Bill Date': finalBill.billDate || '',
+      'Due Date': finalBill.dueDate || '',
+      'Contact Person': finalBill.contactPerson || '',
+      'Phone': finalBill.contactPhone || '',
+      'Email': finalBill.contactEmail || '',
+      'Status': finalBill.status || 'Pending',
+      'Promised Date': finalBill.promisedDate || '',
+      'Last Follow Up': finalBill.lastFollowUpDate || '',
+      'Next Follow Up': finalBill.nextFollowUpDate || '',
+      'Follow Up Count': String(finalBill.followUps.length),
+      'RawData': JSON.stringify(finalBill),
+    };
+
+    // 1. Google Sheets write
+    const doc = await getSheetSafely(6000);
+    const sheet = await getOrCreatePendingBillsSheet(doc);
+    const rows = await sheet.getRows();
+    let targetRow = rows.find(r => r.get('ID') === finalBill.id);
+
+    const sheetPromise = targetRow ? (targetRow.assign(rowObj), targetRow.save()) : sheet.addRow(rowObj);
+
+    // 2. Supabase upsert
+    const supaPromise = syncPendingBillToSupabase(finalBill);
+
+    // 3. Optional Email trigger
+    const emailPromise = triggerEmail
+      ? sendPendingBillEmail({ bill: finalBill, actionType: 'new_bill' })
+      : Promise.resolve({ success: true });
+
+    await Promise.allSettled([sheetPromise, supaPromise, emailPromise]);
+
+    return { success: true, bill: finalBill };
+  } catch (err: any) {
+    console.error('savePendingBill error:', err);
+    // Still try Supabase
+    await syncPendingBillToSupabase(bill).catch(() => {});
+    return { success: false, error: err.message || 'Failed to save pending bill' };
+  }
+}
+
+export async function addBillFollowUp(
+  billId: string,
+  followUp: Omit<BillFollowUp, 'id'>,
+  triggerEmail: boolean = true
+): Promise<{ success: boolean; error?: string; bill?: PendingBill }> {
+  try {
+    const allBills = await getPendingBills();
+    const existing = allBills.find(b => b.id === billId);
+
+    if (!existing) {
+      return { success: false, error: 'Pending bill not found' };
+    }
+
+    const newFollowUp: BillFollowUp = {
+      ...followUp,
+      id: `fu_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      emailTriggered: triggerEmail,
+    };
+
+    const updatedFollowUps = [newFollowUp, ...(existing.followUps || [])];
+
+    let newStatus = existing.status;
+    if (followUp.promisedDate) {
+      newStatus = 'Promised Payment';
+    } else if (newStatus === 'Pending') {
+      newStatus = 'Follow-up Done';
+    }
+
+    const updatedBill: PendingBill = {
+      ...existing,
+      status: newStatus,
+      lastFollowUpDate: followUp.date,
+      promisedDate: followUp.promisedDate || existing.promisedDate,
+      nextFollowUpDate: followUp.nextFollowUpDate || existing.nextFollowUpDate,
+      followUps: updatedFollowUps,
+      updatedAt: new Date().toISOString(),
+    };
+
+    // Save to Google Sheets and Supabase
+    await savePendingBill(updatedBill, false);
+
+    // Trigger email notification to gsaireddy@powerlineselectricalwork.com
+    if (triggerEmail) {
+      await sendPendingBillEmail({
+        bill: updatedBill,
+        followUp: newFollowUp,
+        actionType: followUp.promisedDate ? 'promised' : 'followup',
+      });
+    }
+
+    return { success: true, bill: updatedBill };
+  } catch (err: any) {
+    console.error('addBillFollowUp error:', err);
+    return { success: false, error: err.message || 'Failed to add follow up' };
+  }
+}
+
+export async function deletePendingBill(billId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const sheetPromise = (async () => {
+      try {
+        const doc = await getSheetSafely(5000);
+        const sheet = doc.sheetsByTitle['Pending Bills'];
+        if (sheet) {
+          const rows = await sheet.getRows();
+          const target = rows.find(r => r.get('ID') === billId);
+          if (target) await target.delete();
+        }
+      } catch (e) {}
+    })();
+
+    const supaPromise = deletePendingBillFromSupabase(billId);
+
+    await Promise.allSettled([sheetPromise, supaPromise]);
+    return { success: true };
+  } catch (err: any) {
+    console.error('deletePendingBill error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function triggerPendingBillAlertEmail(
+  billId: string,
+  customMessage?: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const bills = await getPendingBills();
+    const bill = bills.find(b => b.id === billId);
+    if (!bill) {
+      return { success: false, error: 'Bill not found' };
+    }
+
+    const res = await sendPendingBillEmail({
+      bill,
+      actionType: 'reminder',
+      customNote: customMessage,
+    });
+    return res;
+  } catch (err: any) {
+    console.error('triggerPendingBillAlertEmail error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function importUnpaidBillsFromSystem(): Promise<{ success: boolean; importedCount: number; error?: string }> {
+  try {
+    const [existingBills, invoices, cashBills] = await Promise.all([
+      getPendingBills(),
+      fetchInvoicesFromSupabase().then(res => res || []),
+      fetchCashBillsFromSupabase().then(res => res || []),
+    ]);
+
+    const existingBillNos = new Set(
+      existingBills
+        .map(b => (b.billNo || '').trim().toUpperCase())
+        .filter(Boolean)
+    );
+
+    let count = 0;
+
+    // 1. Scan Invoices where status is not Cleared
+    for (const inv of invoices) {
+      const invNo = (inv.id || '').trim().toUpperCase();
+      const status = (inv.status || 'Pending').toLowerCase();
+      if (invNo && !existingBillNos.has(invNo) && status !== 'cleared') {
+        const newBill: PendingBill = {
+          id: `PB-INV-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
+          billName: inv.customer || 'Customer',
+          billNo: inv.id,
+          billType: 'Invoice',
+          pendingAmount: Number(inv.amount || 0),
+          totalAmount: Number(inv.amount || 0),
+          billDate: inv.date || '',
+          dueDate: inv.dueDate || '',
+          contactPerson: inv.customer || '',
+          contactPhone: '',
+          status: 'Pending',
+          notes: `Auto-imported from Tax Invoice #${inv.id}`,
+          followUps: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        await savePendingBill(newBill, false);
+        existingBillNos.add(invNo);
+        count++;
+      }
+    }
+
+    // 2. Scan Cash Bills where status is not Paid
+    for (const cb of cashBills) {
+      const billNo = (cb.id || '').trim().toUpperCase();
+      const status = (cb.status || 'Pending').toLowerCase();
+      if (billNo && !existingBillNos.has(billNo) && status !== 'paid' && status !== 'cleared') {
+        const newBill: PendingBill = {
+          id: `PB-CB-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
+          billName: cb.customer || 'Cash Customer',
+          billNo: cb.id,
+          billType: 'Cash Bill',
+          pendingAmount: Number(cb.amount || 0),
+          totalAmount: Number(cb.amount || 0),
+          billDate: cb.date || '',
+          dueDate: '',
+          contactPerson: cb.customer || '',
+          contactPhone: cb.phone || '',
+          status: 'Pending',
+          notes: `Auto-imported from Cash Bill #${cb.id}`,
+          followUps: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        await savePendingBill(newBill, false);
+        existingBillNos.add(billNo);
+        count++;
+      }
+    }
+
+    return { success: true, importedCount: count };
+  } catch (err: any) {
+    console.error('importUnpaidBillsFromSystem error:', err);
+    return { success: false, importedCount: 0, error: err.message };
+  }
+}

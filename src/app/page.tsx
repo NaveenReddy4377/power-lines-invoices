@@ -1,4 +1,4 @@
-import { TrendingUp, Clock, Users, Quote, AlertCircle } from 'lucide-react';
+import { TrendingUp, Clock, Users, Quote, AlertCircle, CalendarClock } from 'lucide-react';
 import Link from 'next/link';
 import { getDashboardStats } from '@/app/actions';
 import DashboardManager from '@/components/DashboardManager';
@@ -44,6 +44,32 @@ export default async function Dashboard() {
 
         {/* Daily Motivational Quote */}
         <DailyQuote />
+
+        {/* Pending Bills & Follow-ups Quick Banner */}
+        <Link 
+          href="/pending-bills"
+          className="block bg-gradient-to-r from-amber-500/10 via-yellow-500/10 to-emerald-500/10 border border-amber-200 hover:border-amber-300 rounded-2xl p-4 transition-all shadow-sm hover:shadow group"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold shadow-md shadow-amber-500/25 shrink-0">
+                <CalendarClock className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-sm font-extrabold text-slate-900 group-hover:text-amber-700 transition-colors flex items-center gap-2">
+                  <span>Pending Bills & Customer Payment Follow-ups</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 uppercase">NEW</span>
+                </div>
+                <div className="text-xs text-slate-500 mt-0.5">
+                  Track unpaid accounts, record customer promised dates & trigger automated email alerts to <span className="font-semibold text-slate-700">gsaireddy@powerlineselectricalwork.com</span>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 text-xs font-bold text-amber-700 group-hover:translate-x-1 transition-transform self-end sm:self-center">
+              <span>Open Follow-ups Hub →</span>
+            </div>
+          </div>
+        </Link>
 
         {/* Summary Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
