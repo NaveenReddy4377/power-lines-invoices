@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { 
   Search, 
   X, 
@@ -8,6 +8,7 @@ import {
   Calendar, 
   ChevronRight, 
   ChevronLeft, 
+  ChevronDown,
   Edit3, 
   FileText, 
   Quote, 
@@ -29,7 +30,11 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import * as XLSX from 'xlsx';
-import { updateRecordStatus } from '@/app/actions';
+import { updateRecordStatus, loadInvoice, loadQuotation, loadDeliveryChallan, loadCashBill } from '@/app/actions';
+import InvoicePreview from '@/components/InvoicePreview';
+import QuotationPreview from '@/components/QuotationPreview';
+import DeliveryChallanPreview from '@/components/DeliveryChallanPreview';
+import CashBillPreview from '@/components/CashBillPreview';
 
 export interface Record {
   id: string;
@@ -112,6 +117,22 @@ export default function DashboardManager({ invoices, quotations, deliveryChallan
   const [exportModalEndDate, setExportModalEndDate] = useState('');
   const [exportModalStatus, setExportModalStatus] = useState<'all' | 'Pending' | 'Cleared'>('all');
   const [exportModalSearch, setExportModalSearch] = useState('');
+
+  // Single document download states
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [activeDownload, setActiveDownload] = useState<{
+    id: string;
+    type: 'invoices' | 'quotations' | 'deliveryChallans' | 'cashBills';
+    data: any;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!openMenuId) return;
+    const handleOutsideClick = () => setOpenMenuId(null);
+    window.addEventListener('click', handleOutsideClick);
+    return () => window.removeEventListener('click', handleOutsideClick);
+  }, [openMenuId]);
 
   // Filtering implementation
   function filterRecords(
@@ -566,6 +587,229 @@ export default function DashboardManager({ invoices, quotations, deliveryChallan
     }
   };
 
+  // Single Document Excel Export Helper
+  const exportSingleDocToExcel = (
+    type: 'invoices' | 'quotations' | 'deliveryChallans' | 'cashBills',
+    id: string,
+    data: any
+  ) => {
+    try {
+      const safeId = String(id).replace(/[/\\?%*:|"<>]/g, '_');
+
+      if (type === 'deliveryChallans') {
+        const items = data.items || [];
+        const rows = items.map((item: any, idx: number) => ({
+          'DC No': data.dcNo || id,
+          'DC Date': data.dcDate || '',
+          'Challan Type': data.challanType || 'Returnable',
+          'Customer / Party Name': data.customerName || '',
+          'Customer Address': data.customerAddress || '',
+          'Customer GSTIN': data.customerGstin || '',
+          'RGP No': data.rgpNo || '',
+          'RGP Date': data.rgpDate || '',
+          'PO No': data.poNo || '',
+          'PO Date': data.poDate || '',
+          'Vehicle No': data.vehicleNo || '',
+          'Transport Mode': data.modeOfTransport || '',
+          'Item S.No': idx + 1,
+          'Material Code': item.materialCode || '',
+          'Material Description': item.description || '',
+          'UOM': item.uom || 'NOS',
+          'Quantity': Number(item.quantity || 1),
+          'Weight': item.weight || '',
+          'Item Remarks': item.remarks || '',
+          'General Remarks': data.remarks || ''
+        }));
+        const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ 'DC No': id, 'Customer': data.customerName || '' }]);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Delivery Challan');
+        XLSX.writeFile(wb, `${safeId}.xlsx`);
+      } else if (type === 'cashBills') {
+        const items = data.items || [];
+        const rows = items.map((item: any, idx: number) => ({
+          'Bill No': data.billNo || id,
+          'Date': data.billDate || '',
+          'Customer Name': data.customerName || '',
+          'Phone': data.phone || '',
+          'Payment Mode': data.paymentMode || 'Cash',
+          'Item S.No': idx + 1,
+          'Description': item.description || '',
+          'Quantity': Number(item.quantity || 1),
+          'Rate (₹)': Number(item.rate || 0),
+          'Amount (₹)': Number(item.quantity || 1) * Number(item.rate || 0)
+        }));
+        const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ 'Bill No': id, 'Customer': data.customerName || '' }]);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Cash Bill');
+        XLSX.writeFile(wb, `${safeId}.xlsx`);
+      } else if (type === 'invoices') {
+        const items = data.items || [];
+        const rows = items.map((item: any, idx: number) => ({
+          'Invoice No': data.invoiceNo || id,
+          'Invoice Date': data.invoiceDate || '',
+          'Due Date': data.dueDate || '',
+          'Customer Name': data.billTo?.name || '',
+          'Customer GSTIN': data.billTo?.gstin || '',
+          'Customer Address': data.billTo?.address || '',
+          'PO Number': data.poNumber || '',
+          'Item S.No': idx + 1,
+          'Description': item.description || '',
+          'HSN/SAC': item.hsn || '',
+          'Quantity': Number(item.quantity || 1),
+          'Unit Price (₹)': Number(item.price || 0),
+          'Discount': item.discount || 0,
+          'Taxable Value (₹)': Number(item.quantity || 1) * Number(item.price || 0)
+        }));
+        const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ 'Invoice No': id, 'Customer': data.billTo?.name || '' }]);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Invoice');
+        XLSX.writeFile(wb, `${safeId}.xlsx`);
+      } else if (type === 'quotations') {
+        const items = data.items || [];
+        const rows = items.map((item: any, idx: number) => ({
+          'Quotation No': data.quotationNo || id,
+          'Date': data.quotationDate || '',
+          'Valid Until': data.validUntil || '',
+          'Customer Name': data.billTo?.name || '',
+          'Customer GSTIN': data.billTo?.gstin || '',
+          'RGP No': data.rgpNumber || '',
+          'Item S.No': idx + 1,
+          'Description': item.description || '',
+          'Quantity': Number(item.quantity || 1),
+          'Unit Price (₹)': Number(item.price || 0),
+          'Total (₹)': Number(item.quantity || 1) * Number(item.price || 0)
+        }));
+        const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ 'Quotation No': id, 'Customer': data.billTo?.name || '' }]);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Quotation');
+        XLSX.writeFile(wb, `${safeId}.xlsx`);
+      }
+    } catch (e: any) {
+      alert('Failed to export Excel: ' + e.message);
+    }
+  };
+
+  // Automated PDF Capture Effect
+  useEffect(() => {
+    if (!activeDownload) return;
+
+    let isMounted = true;
+    const executePdfDownload = async () => {
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 350));
+
+        const container = document.getElementById('offscreen-pdf-renderer');
+        if (!container) throw new Error('PDF render container not ready');
+
+        const element: HTMLElement | null =
+          container.querySelector('#dc-capture-area') ||
+          container.querySelector('#cb-capture-area') ||
+          container.querySelector('#quotation-capture-area') ||
+          container.querySelector('#pdf-wrapper') ||
+          (container.firstElementChild as HTMLElement);
+
+        if (!element) throw new Error('Document preview element could not be captured');
+
+        const domtoimage = (await import('dom-to-image')).default;
+        const { jsPDF } = await import('jspdf');
+
+        const dataUrl = await domtoimage.toJpeg(element, {
+          quality: 0.92,
+          bgcolor: '#ffffff',
+          style: {
+            transform: 'scale(1)',
+            transformOrigin: 'top left'
+          }
+        });
+
+        const pdf = new jsPDF({
+          orientation: 'portrait',
+          unit: 'mm',
+          format: 'a4',
+          compress: true
+        });
+
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = (element.offsetHeight * pdfWidth) / (element.offsetWidth || 1);
+
+        pdf.addImage(dataUrl, 'JPEG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
+
+        const safeId = String(activeDownload.id).replace(/[/\\?%*:|"<>]/g, '_');
+        pdf.save(`${safeId}.pdf`);
+      } catch (err: any) {
+        console.error('PDF generation error:', err);
+        alert('Failed to download document: ' + (err.message || 'Error generating PDF'));
+      } finally {
+        if (isMounted) {
+          setActiveDownload(null);
+          setDownloadingId(null);
+        }
+      }
+    };
+
+    executePdfDownload();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeDownload]);
+
+  // Main Download Trigger Handler
+  const handleDownloadRecord = async (
+    type: 'invoices' | 'quotations' | 'deliveryChallans' | 'cashBills',
+    id: string,
+    format: 'pdf' | 'excel' = 'pdf'
+  ) => {
+    if (downloadingId) return;
+    setDownloadingId(id);
+
+    try {
+      let docData: any = null;
+
+      if (type === 'deliveryChallans') {
+        const existing = deliveryChallans.find((d) => d.id === id);
+        if (existing?.rawData && existing.rawData.items?.length) {
+          docData = existing.rawData;
+        } else {
+          const res = await loadDeliveryChallan(id);
+          if (!res.success || !res.data) throw new Error(res.error || 'Delivery Challan record not found');
+          docData = res.data;
+        }
+      } else if (type === 'cashBills') {
+        const existing = cashBills.find((c) => c.id === id);
+        if (existing?.rawData && existing.rawData.items?.length) {
+          docData = existing.rawData;
+        } else {
+          const res = await loadCashBill(id);
+          if (!res.success || !res.data) throw new Error(res.error || 'Cash bill record not found');
+          docData = res.data;
+        }
+      } else if (type === 'invoices') {
+        const res = await loadInvoice(id);
+        if (!res.success || !res.data) throw new Error(res.error || 'Invoice record not found');
+        docData = res.data;
+      } else if (type === 'quotations') {
+        const res = await loadQuotation(id);
+        if (!res.success || !res.data) throw new Error(res.error || 'Quotation record not found');
+        docData = res.data;
+      }
+
+      if (!docData) throw new Error('Unable to retrieve document details');
+      if (!docData.items) docData.items = [];
+
+      if (format === 'excel') {
+        exportSingleDocToExcel(type, id, docData);
+        setDownloadingId(null);
+      } else {
+        setActiveDownload({ id, type, data: docData });
+      }
+    } catch (err: any) {
+      console.error('Download error:', err);
+      alert('Failed to load document for download: ' + (err.message || 'Unknown error'));
+      setDownloadingId(null);
+    }
+  };
+
   return (
     <>
       {/* Quick Excel Export Hub Action Banner */}
@@ -626,6 +870,8 @@ export default function DashboardManager({ invoices, quotations, deliveryChallan
           onViewAll={() => setViewAllType('invoices')}
           onExportExcel={() => handleExportInvoicesExcel()}
           onToggleStatus={(id: string, status: string) => handleToggleStatus('invoices', id, status)}
+          onDownloadRecord={(t: any, id: string) => handleDownloadRecord(t, id, 'pdf')}
+          downloadingId={downloadingId}
           accentColor="blue"
         />
 
@@ -638,6 +884,8 @@ export default function DashboardManager({ invoices, quotations, deliveryChallan
           onViewAll={() => setViewAllType('quotations')}
           onExportExcel={() => handleExportQuotationsExcel()}
           onToggleStatus={(id: string, status: string) => handleToggleStatus('quotations', id, status)}
+          onDownloadRecord={(t: any, id: string) => handleDownloadRecord(t, id, 'pdf')}
+          downloadingId={downloadingId}
           accentColor="purple"
         />
       </div>
@@ -791,12 +1039,23 @@ export default function DashboardManager({ invoices, quotations, deliveryChallan
                       </span>
                     </td>
                     <td className="px-6 py-3.5 whitespace-nowrap text-center">
-                      <Link
-                        href={`/delivery-challan?edit=${encodeURIComponent(dc.id)}`}
-                        className="inline-flex items-center gap-1 text-[10px] font-extrabold px-3 py-1 rounded-md bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 transition-colors shadow-sm"
-                      >
-                        <Edit3 className="w-3 h-3 text-amber-600" /> EDIT
-                      </Link>
+                      <div className="flex items-center justify-center gap-1.5">
+                        <Link
+                          href={`/delivery-challan?edit=${encodeURIComponent(dc.id)}`}
+                          className="inline-flex items-center gap-1 text-[10px] font-extrabold px-3 py-1 rounded-md bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 transition-colors shadow-sm"
+                        >
+                          <Edit3 className="w-3 h-3 text-amber-600" /> EDIT
+                        </Link>
+                        <DownloadButton
+                          id={dc.id}
+                          type="deliveryChallans"
+                          downloadingId={downloadingId}
+                          openMenuId={openMenuId}
+                          setOpenMenuId={setOpenMenuId}
+                          onDownload={handleDownloadRecord}
+                          accent="amber"
+                        />
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -902,12 +1161,23 @@ export default function DashboardManager({ invoices, quotations, deliveryChallan
                       </span>
                     </td>
                     <td className="px-6 py-3.5 whitespace-nowrap text-center">
-                      <Link
-                        href={`/cash-bills/new?edit=${encodeURIComponent(cb.id)}`}
-                        className="inline-flex items-center gap-1 text-[10px] font-extrabold px-3 py-1 rounded-md bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 transition-colors shadow-xs"
-                      >
-                        <Edit3 className="w-3 h-3 text-emerald-600" /> EDIT
-                      </Link>
+                      <div className="flex items-center justify-center gap-1.5">
+                        <Link
+                          href={`/cash-bills/new?edit=${encodeURIComponent(cb.id)}`}
+                          className="inline-flex items-center gap-1 text-[10px] font-extrabold px-3 py-1 rounded-md bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 transition-colors shadow-xs"
+                        >
+                          <Edit3 className="w-3 h-3 text-emerald-600" /> EDIT
+                        </Link>
+                        <DownloadButton
+                          id={cb.id}
+                          type="cashBills"
+                          downloadingId={downloadingId}
+                          openMenuId={openMenuId}
+                          setOpenMenuId={setOpenMenuId}
+                          onDownload={handleDownloadRecord}
+                          accent="emerald"
+                        />
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -1178,12 +1448,23 @@ export default function DashboardManager({ invoices, quotations, deliveryChallan
                                 </span>
                               </td>
                               <td className="px-6 py-3.5 whitespace-nowrap text-center">
-                                <Link
-                                  href={`/delivery-challan?edit=${encodeURIComponent(dc.id)}`}
-                                  className="inline-flex items-center gap-1 text-[10px] font-extrabold px-3 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 transition-all shadow-sm"
-                                >
-                                  <Edit3 className="w-3 h-3 text-amber-600" /> EDIT
-                                </Link>
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <Link
+                                    href={`/delivery-challan?edit=${encodeURIComponent(dc.id)}`}
+                                    className="inline-flex items-center gap-1 text-[10px] font-extrabold px-3 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 transition-all shadow-sm"
+                                  >
+                                    <Edit3 className="w-3 h-3 text-amber-600" /> EDIT
+                                  </Link>
+                                  <DownloadButton
+                                    id={dc.id}
+                                    type="deliveryChallans"
+                                    downloadingId={downloadingId}
+                                    openMenuId={openMenuId}
+                                    setOpenMenuId={setOpenMenuId}
+                                    onDownload={handleDownloadRecord}
+                                    accent="amber"
+                                  />
+                                </div>
                               </td>
                             </tr>
                           ))
@@ -1254,12 +1535,23 @@ export default function DashboardManager({ invoices, quotations, deliveryChallan
                                 />
                               </td>
                               <td className="px-6 py-3 whitespace-nowrap text-center">
-                                <Link 
-                                  href={`/${viewAllType === 'invoices' ? 'invoices' : 'quotations'}/new?edit=${r.id}`}
-                                  className={`text-[10px] font-bold px-3.5 py-1.5 rounded-lg border transition-all ${accentColor === 'blue' ? 'text-blue-600 bg-blue-50 border-blue-100 hover:bg-blue-100 hover:border-blue-200' : 'text-purple-600 bg-purple-50 border-purple-100 hover:bg-purple-100 hover:border-purple-200'}`}
-                                >
-                                  EDIT
-                                </Link>
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <Link 
+                                    href={`/${viewAllType === 'invoices' ? 'invoices' : 'quotations'}/new?edit=${r.id}`}
+                                    className={`text-[10px] font-bold px-3.5 py-1.5 rounded-lg border transition-all ${accentColor === 'blue' ? 'text-blue-600 bg-blue-50 border-blue-100 hover:bg-blue-100 hover:border-blue-200' : 'text-purple-600 bg-purple-50 border-purple-100 hover:bg-purple-100 hover:border-purple-200'}`}
+                                  >
+                                    EDIT
+                                  </Link>
+                                  <DownloadButton
+                                    id={r.id}
+                                    type={viewAllType === 'invoices' ? 'invoices' : 'quotations'}
+                                    downloadingId={downloadingId}
+                                    openMenuId={openMenuId}
+                                    setOpenMenuId={setOpenMenuId}
+                                    onDownload={handleDownloadRecord}
+                                    accent={accentColor}
+                                  />
+                                </div>
                               </td>
                             </tr>
                           ))
@@ -1537,11 +1829,128 @@ export default function DashboardManager({ invoices, quotations, deliveryChallan
           </div>
         </div>
       )}
+
+      {/* Hidden Offscreen Container for Generating High-Resolution PDF Downloads */}
+      <div
+        aria-hidden="true"
+        style={{
+          position: 'fixed',
+          left: '-10000px',
+          top: 0,
+          width: '210mm',
+          minHeight: '297mm',
+          backgroundColor: '#ffffff',
+          zIndex: -9999,
+          pointerEvents: 'none',
+          opacity: 1,
+          overflow: 'visible'
+        }}
+      >
+        <div id="offscreen-pdf-renderer" style={{ width: '210mm', backgroundColor: '#ffffff' }}>
+          {activeDownload?.type === 'invoices' && activeDownload.data && (
+            <InvoicePreview data={activeDownload.data} />
+          )}
+          {activeDownload?.type === 'quotations' && activeDownload.data && (
+            <QuotationPreview data={activeDownload.data} />
+          )}
+          {activeDownload?.type === 'deliveryChallans' && activeDownload.data && (
+            <DeliveryChallanPreview data={activeDownload.data} />
+          )}
+          {activeDownload?.type === 'cashBills' && activeDownload.data && (
+            <CashBillPreview data={activeDownload.data} />
+          )}
+        </div>
+      </div>
     </>
   );
 }
 
-function RecordList({ title, icon, records, type, onViewAll, onExportExcel, onToggleStatus, accentColor }: any) {
+function DownloadButton({
+  id,
+  type,
+  downloadingId,
+  openMenuId,
+  setOpenMenuId,
+  onDownload,
+  accent = 'emerald'
+}: {
+  id: string;
+  type: 'invoices' | 'quotations' | 'deliveryChallans' | 'cashBills';
+  downloadingId: string | null;
+  openMenuId: string | null;
+  setOpenMenuId: (id: string | null) => void;
+  onDownload: (type: any, id: string, format: 'pdf' | 'excel') => void;
+  accent?: string;
+}) {
+  const isDownloading = downloadingId === id;
+  const isMenuOpen = openMenuId === id;
+
+  return (
+    <div className="relative inline-flex items-center rounded-lg shadow-sm">
+      <button
+        onClick={() => onDownload(type, id, 'pdf')}
+        disabled={isDownloading}
+        className="inline-flex items-center gap-1 text-[10px] font-extrabold pl-2.5 pr-2 py-1.5 rounded-l-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 transition-all disabled:opacity-50 cursor-pointer"
+        title="Download PDF Document"
+      >
+        {isDownloading ? (
+          <Loader2 className="w-3 h-3 animate-spin text-emerald-600" />
+        ) : (
+          <Download className="w-3 h-3 text-emerald-600" />
+        )}
+        <span>{isDownloading ? 'DOWNLOADING...' : 'DOWNLOAD'}</span>
+      </button>
+
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpenMenuId(isMenuOpen ? null : id);
+        }}
+        className="px-1.5 py-1.5 text-[10px] font-bold rounded-r-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-y border-r border-emerald-200 transition-all cursor-pointer"
+        title="More formats (PDF / Excel)"
+      >
+        <ChevronDown className="w-3 h-3" />
+      </button>
+
+      {isMenuOpen && (
+        <div 
+          className="absolute right-0 top-full mt-1 w-44 bg-white rounded-xl shadow-2xl border border-slate-200 py-1.5 z-50 animate-in fade-in zoom-in-95"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="px-3 py-1 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider border-b border-slate-100">
+            Download Format
+          </div>
+          <button
+            onClick={() => {
+              setOpenMenuId(null);
+              onDownload(type, id, 'pdf');
+            }}
+            className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 flex items-center gap-2 cursor-pointer transition-colors"
+          >
+            <div className="w-5 h-5 rounded bg-red-50 text-red-600 flex items-center justify-center font-bold text-[10px]">
+              PDF
+            </div>
+            <span>PDF Document</span>
+          </button>
+          <button
+            onClick={() => {
+              setOpenMenuId(null);
+              onDownload(type, id, 'excel');
+            }}
+            className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-emerald-50 hover:text-emerald-900 flex items-center gap-2 cursor-pointer transition-colors"
+          >
+            <div className="w-5 h-5 rounded bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-[10px]">
+              XLS
+            </div>
+            <span>Excel Spreadsheet</span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RecordList({ title, icon, records, type, onViewAll, onExportExcel, onToggleStatus, onDownloadRecord, downloadingId, accentColor }: any) {
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-full">
       <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-white sticky top-0 z-10 shrink-0">
@@ -1582,7 +1991,7 @@ function RecordList({ title, icon, records, type, onViewAll, onExportExcel, onTo
           <div className="px-6 py-10 text-center opacity-40 text-xs font-medium">No records found.</div>
         ) : (
           records.map((r: any, idx: number) => (
-            <div key={`${r.id}-${idx}`} className="grid grid-cols-[60px_1fr_90px_40px_40px] gap-2 items-center px-5 py-2.5 hover:bg-slate-50 transition-colors">
+            <div key={`${r.id}-${idx}`} className="grid grid-cols-[55px_1fr_85px_30px_60px] gap-2 items-center px-4 py-2.5 hover:bg-slate-50 transition-colors">
               <div>
                 <span className="text-[10px] font-mono font-bold text-slate-600">#{r.id}</span>
               </div>
@@ -1611,13 +2020,28 @@ function RecordList({ title, icon, records, type, onViewAll, onExportExcel, onTo
                   )}
                 </button>
               </div>
-              <div className="flex justify-end">
+              <div className="flex items-center justify-end gap-1">
                 <Link 
                   href={`/${type}/new?edit=${r.id}`}
-                  className={`p-1.5 rounded-lg border flex items-center justify-center transition-all ${accentColor === 'blue' ? 'text-blue-400 border-blue-100 hover:bg-blue-50' : 'text-purple-400 border-purple-100 hover:bg-purple-50'}`}
+                  title="Edit"
+                  className={`p-1.5 rounded-lg border flex items-center justify-center transition-all ${accentColor === 'blue' ? 'text-blue-500 border-blue-100 hover:bg-blue-50' : 'text-purple-500 border-purple-100 hover:bg-purple-50'}`}
                 >
                   <Edit3 className="w-3 h-3" />
                 </Link>
+                {onDownloadRecord && (
+                  <button
+                    onClick={() => onDownloadRecord(type, r.id)}
+                    disabled={downloadingId === r.id}
+                    title={`Download ${type === 'invoices' ? 'Invoice' : 'Quotation'} PDF`}
+                    className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:text-emerald-700 hover:border-emerald-200 hover:bg-emerald-50 flex items-center justify-center transition-all disabled:opacity-50 cursor-pointer shadow-xs"
+                  >
+                    {downloadingId === r.id ? (
+                      <Loader2 className="w-3 h-3 animate-spin text-emerald-600" />
+                    ) : (
+                      <Download className="w-3 h-3" />
+                    )}
+                  </button>
+                )}
               </div>
             </div>
           ))
