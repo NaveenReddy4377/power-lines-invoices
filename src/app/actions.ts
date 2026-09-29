@@ -1958,11 +1958,22 @@ JSON schema requirement:
 
 Return ONLY raw valid JSON text.`;
 
-    const models = ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.5-flash', 'gemini-flash-latest'];
+    const models = [
+      'gemini-3.5-flash-lite',
+      'gemini-3.1-flash-lite',
+      'gemini-3-flash-preview',
+      'gemini-flash-lite-latest',
+      'gemini-3.8-flash',
+      'gemini-3.7-flash',
+      'gemini-3.5-flash',
+      'gemini-flash-latest'
+    ];
     let response: any = null;
     let lastError = '';
 
     for (const model of models) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 18000);
       try {
         const res = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
@@ -1986,23 +1997,41 @@ Return ONLY raw valid JSON text.`;
                   ]
                 }
               ]
-            })
+            }),
+            signal: controller.signal
           }
         );
+        clearTimeout(timeoutId);
 
         if (res.ok) {
           response = res;
           break;
         } else {
-          lastError = await res.text();
+          const errText = await res.text();
+          lastError = errText;
+          console.warn(`Gemini model ${model} failed (HTTP ${res.status}):`, errText.slice(0, 200));
+          if (res.status === 503 || res.status === 429) {
+            await new Promise(r => setTimeout(r, 300));
+          }
         }
       } catch (err: any) {
-        lastError = err.message;
+        clearTimeout(timeoutId);
+        lastError = err.message || 'Request timed out';
+        console.warn(`Gemini model ${model} threw error:`, lastError);
       }
     }
 
     if (!response || !response.ok) {
-      throw new Error(`Gemini API Error: ${lastError || 'Failed to call Gemini model'}`);
+      let friendlyError = 'The AI model is experiencing high demand right now. Please try again in a few moments.';
+      try {
+        const parsed = JSON.parse(lastError);
+        if (parsed?.error?.message) {
+          friendlyError = parsed.error.message;
+        }
+      } catch (e) {
+        if (lastError) friendlyError = lastError;
+      }
+      throw new Error(`Gemini API Error: ${friendlyError}`);
     }
 
     const resData = await response.json();
