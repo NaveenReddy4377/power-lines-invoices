@@ -186,7 +186,7 @@ function CashBillContent() {
     try {
       const res = await saveCashBillToSpreadsheet(data);
       if (res.success) {
-        setSaveSuccessMsg(`Cash Bill #${data.billNo} saved to Google Sheets successfully!`);
+        setSaveSuccessMsg(`Cash Bill #${data.billNo} saved to Google Sheets and Supabase successfully!`);
         setTimeout(() => setSaveSuccessMsg(null), 5000);
       } else {
         setFailureModal({

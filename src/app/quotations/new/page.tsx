@@ -7,6 +7,7 @@ import QuotationPreview from '@/components/QuotationPreview';
 import EmailModal from '@/components/EmailModal';
 import LoadingOverlay from '@/components/LoadingOverlay';
 import FailureModal from '@/components/FailureModal';
+import SuccessModal from '@/components/SuccessModal';
 import { QuotationData, initialQuotationData } from '@/types';
 import { Printer, Save, Loader2, Mail, Send, ArrowLeft, Edit3 } from 'lucide-react';
 import { saveQuotation, loadQuotation, getNextQuotationNumber } from '@/app/actions';
@@ -30,6 +31,15 @@ function NewQuotation() {
     isOpen: false,
     message: '',
     details: ''
+  });
+  const [successModal, setSuccessModal] = useState<{
+    isOpen: boolean;
+    docNumber: string;
+    clientName?: string;
+    totalAmount?: number | string;
+  }>({
+    isOpen: false,
+    docNumber: '',
   });
 
   const searchParams = useSearchParams();
@@ -125,8 +135,25 @@ function NewQuotation() {
         return;
       }
 
-      // Open email modal which now handles downloading and sending
-      setIsEmailOpen(true);
+      // Calculate grand total
+      const itemsWithTots = (data.items || []).map(item => {
+        let tot = (Number(item.quantity) || 0) * (Number(item.price) || 0);
+        const discount = Number(item.discount) || 0;
+        if (discount > 0) tot -= item.discountType === 'percentage' ? tot * (discount / 100) : discount;
+        return tot;
+      });
+      const sumTotal = itemsWithTots.reduce((a, b) => a + b, 0);
+      const cgst = sumTotal * ((data.taxes?.cgst ?? 9) / 100);
+      const sgst = sumTotal * ((data.taxes?.sgst ?? 9) / 100);
+      const grandTotal = Math.round((sumTotal + cgst + sgst) * 100) / 100;
+
+      // Show success modal confirming Google Sheets & Supabase insertion
+      setSuccessModal({
+        isOpen: true,
+        docNumber: data.quotationNo,
+        clientName: data.billTo?.name,
+        totalAmount: grandTotal,
+      });
 
     } catch (e: any) {
       setFailureModal({
@@ -217,6 +244,22 @@ function NewQuotation() {
         message={failureModal.message}
         details={failureModal.details}
         onRetry={failureModal.onRetry}
+      />
+
+      {/* Success Popup for Quotation (Google Sheets + Supabase) */}
+      <SuccessModal
+        isOpen={successModal.isOpen}
+        onClose={() => setSuccessModal(prev => ({ ...prev, isOpen: false }))}
+        title="Quotation Saved Successfully!"
+        docType="Quotation"
+        docNumber={successModal.docNumber}
+        clientName={successModal.clientName}
+        totalAmount={successModal.totalAmount}
+        sheetTabName="Quotations"
+        onProceedToEmail={() => {
+          setSuccessModal(prev => ({ ...prev, isOpen: false }));
+          setIsEmailOpen(true);
+        }}
       />
 
       {/* Email Modal */}

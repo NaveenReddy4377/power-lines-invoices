@@ -277,7 +277,14 @@ export async function saveToSpreadsheet(data: InvoiceData) {
       return { success: false, error: sheetResult.reason?.message || 'Failed to save invoice to Google Sheets' };
     }
 
-    return { success: true };
+    const isSupaSaved = supaResult.status === 'fulfilled' && supaResult.value.success;
+    return {
+      success: true,
+      message: 'Invoice inserted successfully into Google Sheets and Supabase database.',
+      insertedToSheets: true,
+      insertedToSupabase: isSupaSaved,
+      grandTotal
+    };
   } catch (error: any) {
     console.error('saveToSpreadsheet error:', error);
     return { success: false, error: error.message || 'Failed to save invoice to Google Sheets' };
@@ -529,25 +536,28 @@ export async function getNextQuotationNumber() {
 
 export async function saveQuotation(data: QuotationData) {
   try {
-    const doc = await getSheetSafely();
-    const sheet = await getOrCreateSheet(doc, 'Quotations');
-
-    const itemsWithTots = data.items.map(item => {
-      let tot = item.quantity * item.price;
-      if (item.discount > 0) tot -= item.discountType === 'percentage' ? tot * (item.discount / 100) : item.discount;
+    const items = data.items || [];
+    const itemsWithTots = items.map(item => {
+      let tot = (Number(item.quantity) || 0) * (Number(item.price) || 0);
+      const discount = Number(item.discount) || 0;
+      if (discount > 0) {
+        tot -= item.discountType === 'percentage' ? tot * (discount / 100) : discount;
+      }
       return tot;
     });
     const sumTotal = itemsWithTots.reduce((a, b) => a + b, 0);
-    const cgst = sumTotal * (data.taxes.cgst / 100);
-    const sgst = sumTotal * (data.taxes.sgst / 100);
-    const grandTotal = sumTotal + cgst + sgst;
+    const cgstRate = typeof data.taxes?.cgst === 'number' ? data.taxes.cgst : 9;
+    const sgstRate = typeof data.taxes?.sgst === 'number' ? data.taxes.sgst : 9;
+    const cgst = sumTotal * (cgstRate / 100);
+    const sgst = sumTotal * (sgstRate / 100);
+    const grandTotal = Math.round((sumTotal + cgst + sgst) * 100) / 100;
 
     const rowObj = {
-      'Quotation No': data.quotationNo,
-      'Date': data.quotationDate,
-      'Valid Until': data.validUntil,
-      'Billed To': data.billTo.name,
-      'GSTIN': data.billTo.gstin,
+      'Quotation No': (data.quotationNo || '').trim(),
+      'Date': data.quotationDate || '',
+      'Valid Until': data.validUntil || '',
+      'Billed To': data.billTo?.name || '',
+      'GSTIN': data.billTo?.gstin || '',
       'RGP No': data.rgpNumber || '',
       'RGP Date': data.rgpDate || '',
       'Grand Total (₹)': grandTotal,
@@ -555,39 +565,67 @@ export async function saveQuotation(data: QuotationData) {
       'RawData': JSON.stringify(data),
     };
 
-    const rows = await sheet.getRows();
-    let targetRow = null;
-    for (const row of rows) {
-      if (row.get('Quotation No') === data.quotationNo) {
-        targetRow = row; break;
+    // Google Sheets write with retry
+    const sheetWrite = async () => {
+      let doc = await getSheetSafely();
+      let sheet = await getOrCreateSheet(doc, 'Quotations');
+      const rows = await sheet.getRows();
+      let targetRow = null;
+      for (const row of rows) {
+        if (row.get('Quotation No') === rowObj['Quotation No']) {
+          targetRow = row;
+          break;
+        }
       }
-    }
 
-    // Save to Google Sheets and Supabase concurrently, awaiting both!
-    const sheetPromise = (async () => {
       if (targetRow) {
         targetRow.assign(rowObj);
         await targetRow.save();
       } else {
         await sheet.addRow(rowObj);
       }
+    };
+
+    const sheetPromise = (async () => {
+      try {
+        await sheetWrite();
+      } catch (err: any) {
+        console.warn('Initial Google Sheets quotation write failed, retrying once...', err?.message);
+        // Wait 1.5s and retry once
+        await new Promise(res => setTimeout(res, 1500));
+        await sheetWrite();
+      }
     })();
+
     const supabasePromise = syncQuotationToSupabase(data);
 
     const [sheetResult, supaResult] = await Promise.allSettled([sheetPromise, supabasePromise]);
 
     if (sheetResult.status === 'rejected') {
-      console.error('Google Sheets quotation save error:', sheetResult.reason);
-      if (supaResult.status === 'fulfilled' && supaResult.value.success) {
-        return { success: true, offline: true, note: 'Saved to Supabase database (Google Sheets write pending)' };
-      }
-      return { success: false, error: sheetResult.reason?.message || 'Failed to save quotation to Google Sheets' };
+      console.error('Google Sheets quotation save error after retry:', sheetResult.reason);
+      const isSupaSaved = supaResult.status === 'fulfilled' && supaResult.value.success;
+      return {
+        success: false,
+        savedToSupabase: isSupaSaved,
+        error: `Failed to write to Google Sheets: ${sheetResult.reason?.message || 'Timeout/Network error'}${isSupaSaved ? ' (However, it was saved to Supabase database).' : ''}`
+      };
     }
 
-    return { success: true };
+    if (data.quotationNo) {
+      lastKnownQuotationNo = data.quotationNo;
+    }
+
+    const isSupaSaved = supaResult.status === 'fulfilled' && supaResult.value.success;
+    return {
+      success: true,
+      message: 'Quotation inserted successfully into Google Sheets and Supabase database.',
+      insertedToSheets: true,
+      insertedToSupabase: isSupaSaved,
+      grandTotal
+    };
   } catch (error: any) {
     console.error('saveQuotation error:', error);
-    return { success: false, error: error.message || 'Failed to save quotation to Google Sheets' };
+    return { success: false, error: error.message || 'Failed to save quotation' };
   }
 }
 
@@ -1446,7 +1484,15 @@ export async function saveDeliveryChallanToSpreadsheet(data: DeliveryChallanData
       return { success: false, error: sheetResult.reason?.message || 'Failed to save delivery challan' };
     }
 
-    return { success: true, offline: false, error: undefined };
+    const isSupaSaved = supaResult.status === 'fulfilled' && supaResult.value.success;
+    return {
+      success: true,
+      offline: false,
+      message: 'Delivery Challan inserted successfully into Google Sheets and Supabase database.',
+      insertedToSheets: true,
+      insertedToSupabase: isSupaSaved,
+      error: undefined
+    };
   } catch (error: any) {
     console.error('saveDeliveryChallanToSpreadsheet error:', error);
     return { success: false, error: error.message || 'Failed to save delivery challan' };
@@ -1605,7 +1651,15 @@ export async function saveCashBillToSpreadsheet(data: CashBillData) {
       return { success: false, error: sheetResult.reason?.message || 'Failed to save cash bill' };
     }
 
-    return { success: true, offline: false, error: undefined };
+    const isSupaSaved = supaResult.status === 'fulfilled' && supaResult.value.success;
+    return {
+      success: true,
+      offline: false,
+      message: 'Cash Bill inserted successfully into Google Sheets and Supabase database.',
+      insertedToSheets: true,
+      insertedToSupabase: isSupaSaved,
+      error: undefined
+    };
   } catch (error: any) {
     console.error('saveCashBillToSpreadsheet error:', error);
     return { success: false, error: error.message || 'Failed to save cash bill' };

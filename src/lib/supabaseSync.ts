@@ -46,19 +46,37 @@ export async function syncInvoiceToSupabase(data: InvoiceData): Promise<{ succes
   }
 
   try {
-    const netTotal = (data.items || []).reduce((sum, item) => {
-      const lineNet = Number(item.quantity || 0) * Number(item.price || 0);
-      return sum + lineNet;
-    }, 0);
+    const itemsWithTots = (data.items || []).map(item => {
+      let tot = (Number(item.quantity) || 0) * (Number(item.price) || 0);
+      const discount = Number(item.discount) || 0;
+      if (discount > 0) {
+        tot -= item.discountType === 'percentage' ? tot * (discount / 100) : discount;
+      }
+      return tot;
+    });
+    const subtotal = itemsWithTots.reduce((a, b) => a + b, 0);
 
     const isInterState = Boolean(
       data.billTo?.placeOfSupply &&
       !data.billTo.placeOfSupply.toLowerCase().includes('telangana')
     );
-    const taxRate = isInterState
-      ? 18
-      : (Number(data.taxes?.cgst ? 9 : 9) + Number(data.taxes?.sgst ? 9 : 9));
-    const grandTotal = Math.round((netTotal + (netTotal * taxRate / 100)) * 100) / 100;
+
+    let taxRate = 0;
+    if (isInterState) {
+      taxRate = typeof (data.taxes as any)?.igst === 'number'
+        ? (data.taxes as any).igst
+        : (data.taxes ? Number((data.taxes as any)?.igst || 0) : 0);
+    } else {
+      const cgstRate = typeof data.taxes?.cgst === 'number'
+        ? data.taxes.cgst
+        : (data.taxes?.cgst ? Number(data.taxes.cgst) : 0);
+      const sgstRate = typeof data.taxes?.sgst === 'number'
+        ? data.taxes.sgst
+        : (data.taxes?.sgst ? Number(data.taxes.sgst) : 0);
+      taxRate = cgstRate + sgstRate;
+    }
+
+    const grandTotal = Math.round((subtotal + (subtotal * taxRate / 100)) * 100) / 100;
 
     const { error } = await supabase
       .from('invoices')
@@ -358,11 +376,36 @@ export async function syncQuotationToSupabase(data: QuotationData): Promise<{ su
   }
 
   try {
-    const subtotal = (data.items || []).reduce(
-      (sum, item) => sum + Number(item.quantity || 0) * Number(item.price || 0),
-      0
+    const itemsWithTots = (data.items || []).map(item => {
+      let tot = (Number(item.quantity) || 0) * (Number(item.price) || 0);
+      const discount = Number(item.discount) || 0;
+      if (discount > 0) {
+        tot -= item.discountType === 'percentage' ? tot * (discount / 100) : discount;
+      }
+      return tot;
+    });
+    const subtotal = itemsWithTots.reduce((a, b) => a + b, 0);
+
+    const isInterState = Boolean(
+      data.billTo?.placeOfSupply &&
+      !data.billTo.placeOfSupply.toLowerCase().includes('telangana')
     );
-    const taxRate = Number(data.taxes?.cgst ? 9 : 9) + Number(data.taxes?.sgst ? 9 : 9);
+
+    let taxRate = 0;
+    if (isInterState) {
+      taxRate = typeof (data.taxes as any)?.igst === 'number'
+        ? (data.taxes as any).igst
+        : (data.taxes ? Number((data.taxes as any)?.igst || 0) : 0);
+    } else {
+      const cgstRate = typeof data.taxes?.cgst === 'number'
+        ? data.taxes.cgst
+        : (data.taxes?.cgst ? Number(data.taxes.cgst) : 0);
+      const sgstRate = typeof data.taxes?.sgst === 'number'
+        ? data.taxes.sgst
+        : (data.taxes?.sgst ? Number(data.taxes.sgst) : 0);
+      taxRate = cgstRate + sgstRate;
+    }
+
     const grandTotal = Math.round((subtotal + (subtotal * taxRate / 100)) * 100) / 100;
 
     const { error } = await supabase

@@ -36,7 +36,7 @@ export default function InvoicePreview({ data }: { data: InvoiceData }) {
   const words = numberToWords(grandTotal);
 
   return (
-    <div className="w-[210mm] shrink-0 mx-auto relative text-black bg-white pb-6 print:pb-0 font-sans" id="pdf-wrapper" style={{padding:"10px", fontFamily: "Arial, Helvetica, sans-serif"}}>
+    <div className="w-[210mm] shrink-0 mx-auto relative text-black bg-white pb-6 print:pb-0 font-sans" id="pdf-wrapper" style={{padding:"10px", fontFamily: '"Roboto", sans-serif'}}>
       
       {/* Top Header Row (Outside the main border box) */}
       <div className="flex justify-between items-end pb-2 px-1">

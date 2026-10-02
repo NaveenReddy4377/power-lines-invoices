@@ -43,7 +43,7 @@ export default function CashBillPreview({ data }: Props) {
 
           {/* Business Banner */}
           <div className="text-center py-1">
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-blue-950 uppercase font-serif">
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-blue-950 uppercase">
               POWER LINES ELECTRICAL WORKS
             </h1>
             <p className="text-[11px] font-semibold text-slate-700 mt-1">

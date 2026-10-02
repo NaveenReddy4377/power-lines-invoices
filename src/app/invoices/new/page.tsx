@@ -7,6 +7,7 @@ import InvoicePreview from '@/components/InvoicePreview';
 import EmailModal from '@/components/EmailModal';
 import LoadingOverlay from '@/components/LoadingOverlay';
 import FailureModal from '@/components/FailureModal';
+import SuccessModal from '@/components/SuccessModal';
 import { InvoiceData, initialInvoiceData } from '@/types';
 import { Save, Printer, FileSpreadsheet, Mail, Send, ArrowLeft, Edit3, Loader2 } from 'lucide-react';
 import { saveToSpreadsheet, getNextInvoiceNumber, loadInvoice } from '@/app/actions';
@@ -30,6 +31,15 @@ function NewInvoice() {
     isOpen: false,
     message: '',
     details: ''
+  });
+  const [successModal, setSuccessModal] = useState<{
+    isOpen: boolean;
+    docNumber: string;
+    clientName?: string;
+    totalAmount?: number | string;
+  }>({
+    isOpen: false,
+    docNumber: '',
   });
 
   const searchParams = useSearchParams();
@@ -125,8 +135,27 @@ function NewInvoice() {
         return;
       }
 
-      // Open email modal which now handles downloading and sending
-      setIsEmailOpen(true);
+      // Calculate grand total
+      const totalAmount = (data.items || []).reduce((sum, item) => {
+        let price = (Number(item.price) || 0) * (Number(item.quantity) || 0);
+        if (item.discountType === 'percentage') {
+          price -= (price * (Number(item.discount) || 0) / 100);
+        } else {
+          price -= (Number(item.discount) || 0);
+        }
+        return sum + price;
+      }, 0);
+      const cgstAmount = totalAmount * ((data.taxes?.cgst ?? 9) / 100);
+      const sgstAmount = totalAmount * ((data.taxes?.sgst ?? 9) / 100);
+      const grandTotal = Math.round((totalAmount + cgstAmount + sgstAmount) * 100) / 100;
+
+      // Show success modal confirming Google Sheets & Supabase insertion
+      setSuccessModal({
+        isOpen: true,
+        docNumber: data.invoiceNo,
+        clientName: data.billTo?.name,
+        totalAmount: grandTotal,
+      });
 
     } catch (e: any) {
       setFailureModal({
@@ -217,6 +246,22 @@ function NewInvoice() {
         message={failureModal.message}
         details={failureModal.details}
         onRetry={failureModal.onRetry}
+      />
+
+      {/* Success Popup for Invoice (Google Sheets + Supabase) */}
+      <SuccessModal
+        isOpen={successModal.isOpen}
+        onClose={() => setSuccessModal(prev => ({ ...prev, isOpen: false }))}
+        title="Invoice Saved Successfully!"
+        docType="Invoice"
+        docNumber={successModal.docNumber}
+        clientName={successModal.clientName}
+        totalAmount={successModal.totalAmount}
+        sheetTabName="Sheet1"
+        onProceedToEmail={() => {
+          setSuccessModal(prev => ({ ...prev, isOpen: false }));
+          setIsEmailOpen(true);
+        }}
       />
 
       {/* Email Modal */}

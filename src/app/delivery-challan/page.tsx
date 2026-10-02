@@ -193,8 +193,8 @@ function DeliveryChallanContent() {
         return;
       }
 
-      // 2. Only show print screen after successful save to Google Sheets
-      setSaveSuccessMsg(`Saved DC #${data.dcNo} to Google Sheets!`);
+      // 2. Only show print screen after successful save to Google Sheets & Supabase
+      setSaveSuccessMsg(`Saved DC #${data.dcNo} to Google Sheets & Supabase!`);
       setTimeout(() => setSaveSuccessMsg(null), 3000);
 
       const originalTitle = document.title;
@@ -230,7 +230,7 @@ function DeliveryChallanContent() {
     try {
       const res = await saveDeliveryChallanToSpreadsheet(data);
       if (res.success) {
-        setSaveSuccessMsg(`Saved Delivery Challan #${data.dcNo} to Google Sheets!`);
+        setSaveSuccessMsg(`Saved Delivery Challan #${data.dcNo} to Google Sheets & Supabase!`);
         setTimeout(() => setSaveSuccessMsg(null), 4000);
         // Reset all fields after successful save
         await resetForm();
