@@ -1605,6 +1605,88 @@ export async function uploadRGPPhoto(base64Data: string, originalFileName: strin
   }
 }
 
+export async function uploadPOFile(base64Data: string, originalFileName: string, mimeType: string = 'application/pdf') {
+  try {
+    const ext = path.extname(originalFileName) || (mimeType?.includes('pdf') ? '.pdf' : '.jpg');
+    const safeName = `po_${Date.now()}_${Math.random().toString(36).substring(2, 8)}${ext}`;
+    const cleanBase64 = base64Data.replace(/^data:[^;]+;base64,/, '');
+    const buffer = Buffer.from(cleanBase64, 'base64');
+
+    let storedUrl: string | null = null;
+    let storageProvider = 'local';
+
+    // 1. Primary: Upload to Supabase Storage bucket 'po-uploads' (Permanent cloud database storage)
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('po-uploads')
+          .upload(safeName, buffer, {
+            contentType: mimeType || 'application/pdf',
+            upsert: true,
+          });
+
+        if (!uploadError && uploadData) {
+          const { data: pubData } = supabase.storage
+            .from('po-uploads')
+            .getPublicUrl(safeName);
+          if (pubData?.publicUrl) {
+            storedUrl = pubData.publicUrl;
+            storageProvider = 'supabase';
+          }
+        } else if (uploadError) {
+          console.warn('Supabase storage upload notice (po-uploads):', uploadError.message);
+        }
+      } catch (supaErr: any) {
+        console.warn('Supabase storage error (po-uploads):', supaErr?.message || supaErr);
+      }
+    }
+
+    // 2. Secondary backup: Upload to Google Drive if credentials available
+    let driveUrl: string | null = null;
+    try {
+      driveUrl = await uploadToGoogleDrive(safeName, base64Data, mimeType);
+      if (!storedUrl && driveUrl) {
+        storedUrl = driveUrl;
+        storageProvider = 'drive';
+      }
+    } catch (dErr) {
+      console.warn('Google Drive backup upload notice:', dErr);
+    }
+
+    // 3. Fallback: Persistent local public storage
+    try {
+      const uploadsDir = path.join(process.cwd(), 'public', 'uploads', 'po');
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+      const filePath = path.join(uploadsDir, safeName);
+      fs.writeFileSync(filePath, buffer);
+
+      if (!storedUrl) {
+        storedUrl = `/uploads/po/${safeName}`;
+        storageProvider = 'local';
+      }
+    } catch (fsErr) {
+      console.warn('Local file write error:', fsErr);
+    }
+
+    if (!storedUrl) {
+      return { success: false, error: 'Failed to save PO file to storage.' };
+    }
+
+    return { 
+      success: true, 
+      url: storedUrl, 
+      storage: storageProvider, 
+      driveUrl, 
+      fileName: originalFileName || safeName 
+    };
+  } catch (error: any) {
+    console.error('uploadPOFile error:', error);
+    return { success: false, error: error.message || 'Failed to save PO file' };
+  }
+}
+
 export async function saveDeliveryChallanToSpreadsheet(data: DeliveryChallanData) {
   try {
     const doc = await getSheetSafely(5000);
@@ -2369,6 +2451,433 @@ export async function extractDCFromUrl(photoUrl: string) {
     return await extractDCFromImage(base64, mimeType);
   } catch (error: any) {
     console.error('extractDCFromUrl error:', error);
+    return { success: false, error: error.message || 'Failed to extract document from URL' };
+  }
+}
+
+export async function extractInvoiceFromPO(base64Data: string, mimeType: string = 'application/pdf') {
+  try {
+    let rawKey = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+    if (!rawKey) {
+      try {
+        const envPath = path.join(process.cwd(), '.env.local');
+        if (fs.existsSync(envPath)) {
+          const envContent = fs.readFileSync(envPath, 'utf8');
+          const match = envContent.match(/^GEMINI_API_KEY\s*=\s*(.+)$/m);
+          if (match) rawKey = match[1].trim();
+        }
+      } catch (e) {}
+    }
+
+    const apiKey = rawKey ? rawKey.trim().replace(/^["']|["']$/g, '') : '';
+    if (!apiKey) {
+      return {
+        success: false,
+        error: 'GEMINI_API_KEY is not configured in .env.local. Please set GEMINI_API_KEY to enable AI OCR extraction.'
+      };
+    }
+
+    const cleanBase64 = base64Data.replace(/^data:[^;]+;base64,/, '');
+
+    const promptText = `You are an expert OCR AI specializing in Indian Purchase Orders (PO), Service Orders, and Work Orders.
+Analyze the provided document (PDF or image) and extract invoice details into strict JSON:
+CRITICAL RULES FOR CUSTOMER / CLIENT:
+1. 'POWER LINES ELECTRICAL WORKS' is NEVER the customer. Power Lines is the vendor/contractor providing services.
+2. The customer is the client company that issued the Purchase Order/Service Order (e.g. APL RESEARCH CENTRE / AUROBINDO PHARMA LTD, APITORIA PHARMA PRIVATE LIMITED, AURO PEPTIDES, EUGIA, etc.).
+Look at 'DELIVERY AT', 'ADDRESS FOR TAX INVOICE', 'BILL TO GSTIN', or company header for the true customer name, address, GSTIN, PAN.
+3. Extract PO Number (Order Number), PO Date (Order Date).
+4. Extract all line items from the document (often located in an Annexure or table):
+   - Description (e.g. "MOTOR REWINDING CHARGES FOR WET LAB OVEN MOTOR 1 HP, RPM: 1440/2880")
+   - HSN / SAC code (e.g. 9987)
+   - Quantity (number)
+   - Unit (e.g. EA, NOS, SET)
+   - Unit Price / Rate (number)
+   - Discount if any
+5. Extract CGST and SGST tax rates (e.g. 9% CGST, 9% SGST -> 9).
+
+Return JSON format:
+{
+  "customerName": "Client company name (e.g. APL RESEARCH CENTRE (A Division of Aurobindo Pharma Ltd)) - NEVER Power Lines",
+  "customerAddress": "Full address including Sy.No, Mandal, District, State, Pincode",
+  "customerGstin": "GSTIN of client",
+  "customerPan": "PAN of client",
+  "placeOfSupply": "Telangana",
+  "poNumber": "Order number / PO number",
+  "poDate": "PO Date in YYYY-MM-DD or DD-MMM-YYYY format",
+  "cgstRate": 9,
+  "sgstRate": 9,
+  "items": [
+    {
+      "description": "Full item description",
+      "hsn": "9987",
+      "quantity": 1,
+      "quantityUnit": "EA",
+      "price": 1574,
+      "discount": 0
+    }
+  ]
+}
+Return ONLY raw valid JSON text.`;
+
+    const models = [
+      'gemini-3.5-flash-lite',
+      'gemini-flash-lite-latest',
+      'gemini-3.1-flash-lite',
+      'gemini-3.8-flash',
+      'gemini-3.7-flash',
+      'gemini-3.5-flash',
+      'gemini-flash-latest'
+    ];
+    let response: any = null;
+    let lastError = '';
+
+    for (const model of models) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
+      try {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': apiKey
+            },
+            body: JSON.stringify({
+              contents: [
+                {
+                  parts: [
+                    {
+                      inline_data: {
+                        mime_type: mimeType,
+                        data: cleanBase64
+                      }
+                    },
+                    { text: promptText }
+                  ]
+                }
+              ]
+            }),
+            signal: controller.signal
+          }
+        );
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+          response = res;
+          break;
+        } else {
+          const errText = await res.text();
+          lastError = errText;
+          console.warn(`Gemini model ${model} failed (HTTP ${res.status}):`, errText.slice(0, 200));
+          if (res.status === 503 || res.status === 429) {
+            await new Promise(r => setTimeout(r, 300));
+          }
+        }
+      } catch (err: any) {
+        clearTimeout(timeoutId);
+        lastError = err.message || 'Request timed out';
+        console.warn(`Gemini model ${model} threw error:`, lastError);
+      }
+    }
+
+    if (!response || !response.ok) {
+      let friendlyError = 'The AI model is experiencing high demand right now. Please try again in a few moments.';
+      try {
+        const parsed = JSON.parse(lastError);
+        if (parsed?.error?.message) {
+          friendlyError = parsed.error.message;
+        }
+      } catch (e) {
+        if (lastError) friendlyError = lastError;
+      }
+      throw new Error(`Gemini API Error: ${friendlyError}`);
+    }
+
+    const resData = await response.json();
+    const rawText = resData.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+    const cleanJsonStr = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+
+    const arrayMatch = cleanJsonStr.match(/\[[\s\S]*\]/);
+    const objectMatch = cleanJsonStr.match(/\{[\s\S]*\}/);
+    let jsonToParse = cleanJsonStr;
+    if (arrayMatch && (!objectMatch || cleanJsonStr.indexOf('[') < cleanJsonStr.indexOf('{'))) {
+      jsonToParse = arrayMatch[0];
+    } else if (objectMatch) {
+      jsonToParse = objectMatch[0];
+    }
+
+    const parsed = JSON.parse(jsonToParse);
+    const extracted = Array.isArray(parsed) ? parsed[0] : parsed;
+
+    // Guard: Power Lines Electrical Works is NEVER the customer
+    if (extracted && extracted.customerName && /power\s*lines/i.test(extracted.customerName)) {
+      extracted.customerName = '';
+      if (extracted.customerAddress && /bollaram|jinnaram|502\s*325/i.test(extracted.customerAddress)) {
+        extracted.customerAddress = '';
+      }
+    }
+
+    return { success: true, data: extracted };
+  } catch (error: any) {
+    console.error('extractInvoiceFromPO error:', error);
+    return { success: false, error: error.message || 'Failed to extract text from PO document.' };
+  }
+}
+
+export async function extractInvoiceFromPOUrl(fileUrl: string) {
+  try {
+    if (!fileUrl) return { success: false, error: 'No URL provided' };
+    let base64 = '';
+    let mimeType = 'application/pdf';
+    if (fileUrl.startsWith('/uploads/')) {
+      const filePath = path.join(process.cwd(), 'public', fileUrl.replace(/^\//, ''));
+      if (!fs.existsSync(filePath)) return { success: false, error: 'Local file not found on server' };
+      const buffer = fs.readFileSync(filePath);
+      base64 = buffer.toString('base64');
+      const ext = path.extname(filePath).toLowerCase();
+      if (ext === '.pdf') mimeType = 'application/pdf';
+      else if (ext === '.png') mimeType = 'image/png';
+      else if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg';
+    } else if (fileUrl.startsWith('http')) {
+      const resp = await fetch(fileUrl);
+      if (!resp.ok) return { success: false, error: `Failed to download file from URL (${resp.status})` };
+      const arrayBuf = await resp.arrayBuffer();
+      base64 = Buffer.from(arrayBuf).toString('base64');
+      const ct = resp.headers.get('content-type');
+      if (ct) mimeType = ct;
+    } else {
+      return { success: false, error: 'Unsupported URL format' };
+    }
+    return await extractInvoiceFromPO(base64, mimeType);
+  } catch (error: any) {
+    console.error('extractInvoiceFromPOUrl error:', error);
+    return { success: false, error: error.message || 'Failed to extract document from URL' };
+  }
+}
+
+export async function extractQuotationFromRGP(base64Data: string, mimeType: string = 'image/jpeg') {
+  try {
+    let rawKey = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+    if (!rawKey) {
+      try {
+        const envPath = path.join(process.cwd(), '.env.local');
+        if (fs.existsSync(envPath)) {
+          const envContent = fs.readFileSync(envPath, 'utf8');
+          const match = envContent.match(/^GEMINI_API_KEY\s*=\s*(.+)$/m);
+          if (match) rawKey = match[1].trim();
+        }
+      } catch (e) {}
+    }
+
+    const apiKey = rawKey ? rawKey.trim().replace(/^["']|["']$/g, '') : '';
+    if (!apiKey) {
+      return {
+        success: false,
+        error: 'GEMINI_API_KEY is not configured in .env.local. Please set GEMINI_API_KEY to enable AI OCR extraction.'
+      };
+    }
+
+    const cleanBase64 = base64Data.replace(/^data:[^;]+;base64,/, '');
+
+    const promptText = `You are an expert industrial Quotation & Work Order OCR AI for an electrical repair workshop ('POWER LINES ELECTRICAL WORKS').
+Analyze the provided Returnable Gate Pass (RGP) / Delivery Challan document (image or PDF) and extract quotation details into strict JSON.
+
+CRITICAL RULES:
+1. CUSTOMER IDENTIFICATION:
+   - "POWER LINES ELECTRICAL WORKS" is NEVER the customer! Power Lines is the service vendor/contractor repairing the equipment.
+   - The customer is the client company that issued the RGP (e.g. APITORIA PHARMA PRIVATE LIMITED, AUROBINDO PHARMA LTD, AURO PEPTIDES, etc.).
+   - Extract customer name, address, GSTIN from the header/issuer of the RGP.
+2. RGP REFERENCE:
+   - Extract RGP Number (e.g. 360/RGP/25-26/00033) and RGP Date (e.g. 26-APR-25 or YYYY-MM-DD).
+3. LINE ITEMS & REWINDING CHARGES:
+   - Extract all items listed in the material table.
+   - For ANY motor or equipment item sent for repair/rewinding (especially items describing motors, HP, KW, RPM, or repair work):
+     ADD / PREPEND the text "REWINDING CHARGES FOR " to the description if it is not already present!
+     For example:
+     If the RGP item description is:
+     "USED MOTOR NFLP HORIZONTAL FOOT MOUNTED 160 KW/215 HP 3 PH 415 V 1500 RPM"
+     The formatted description MUST BE:
+     "REWINDING CHARGES FOR USED MOTOR NFLP HORIZONTAL FOOT MOUNTED 160 KW/215 HP 3 PH 415 V 1500 RPM"
+
+     If an item is a bearing, seal, or replacement part (e.g. "USED DEEP GROOVE BALL BEARING SINGLE ROW 6319-C3"), format it as:
+     "SUPPLY & REPLACEMENT OF DEEP GROOVE BALL BEARING 6319-C3" or keep description with HSN.
+   - Set "hsn" to "9987" (the standard SAC code for electrical motor rewinding/repair services).
+   - Quantity should match the RGP (e.g. 1, 2).
+   - QuantityUnit should be "EA", "NOS", or "SET".
+   - Price can be 0 (user will enter/confirm prices).
+
+Return JSON format:
+{
+  "customerName": "Client company name (e.g. APITORIA PHARMA PRIVATE LIMITED UNIT-1) - NEVER Power Lines",
+  "customerAddress": "Full client address",
+  "customerGstin": "Client GSTIN",
+  "rgpNumber": "360/RGP/25-26/00033",
+  "rgpDate": "26-APR-25",
+  "subject": "QUOTATION FOR MOTOR REWINDING AND REPAIR CHARGES",
+  "items": [
+    {
+      "description": "REWINDING CHARGES FOR USED MOTOR NFLP HORIZONTAL FOOT MOUNTED 160 KW/215 HP 3 PH 415 V 1500 RPM",
+      "hsn": "9987",
+      "quantity": 1,
+      "quantityUnit": "EA",
+      "price": 0
+    }
+  ]
+}
+Return ONLY raw valid JSON text.`;
+
+    const models = [
+      'gemini-3.5-flash-lite',
+      'gemini-flash-lite-latest',
+      'gemini-3.1-flash-lite',
+      'gemini-3.8-flash',
+      'gemini-3.7-flash',
+      'gemini-3.5-flash',
+      'gemini-flash-latest'
+    ];
+    let response: any = null;
+    let lastError = '';
+
+    for (const model of models) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
+      try {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': apiKey
+            },
+            body: JSON.stringify({
+              contents: [
+                {
+                  parts: [
+                    {
+                      inline_data: {
+                        mime_type: mimeType,
+                        data: cleanBase64
+                      }
+                    },
+                    { text: promptText }
+                  ]
+                }
+              ]
+            }),
+            signal: controller.signal
+          }
+        );
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+          response = res;
+          break;
+        } else {
+          const errText = await res.text();
+          lastError = errText;
+          console.warn(`Gemini model ${model} failed (HTTP ${res.status}):`, errText.slice(0, 200));
+          if (res.status === 503 || res.status === 429) {
+            await new Promise(r => setTimeout(r, 300));
+          }
+        }
+      } catch (err: any) {
+        clearTimeout(timeoutId);
+        lastError = err.message || 'Request timed out';
+        console.warn(`Gemini model ${model} threw error:`, lastError);
+      }
+    }
+
+    if (!response || !response.ok) {
+      let friendlyError = 'The AI model is experiencing high demand right now. Please try again in a few moments.';
+      try {
+        const parsed = JSON.parse(lastError);
+        if (parsed?.error?.message) {
+          friendlyError = parsed.error.message;
+        }
+      } catch (e) {
+        if (lastError) friendlyError = lastError;
+      }
+      throw new Error(`Gemini API Error: ${friendlyError}`);
+    }
+
+    const resData = await response.json();
+    const rawText = resData.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+    const cleanJsonStr = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+
+    const arrayMatch = cleanJsonStr.match(/\[[\s\S]*\]/);
+    const objectMatch = cleanJsonStr.match(/\{[\s\S]*\}/);
+    let jsonToParse = cleanJsonStr;
+    if (arrayMatch && (!objectMatch || cleanJsonStr.indexOf('[') < cleanJsonStr.indexOf('{'))) {
+      jsonToParse = arrayMatch[0];
+    } else if (objectMatch) {
+      jsonToParse = objectMatch[0];
+    }
+
+    const parsed = JSON.parse(jsonToParse);
+    const extracted = Array.isArray(parsed) ? parsed[0] : parsed;
+
+    // Guard: Power Lines Electrical Works is NEVER the customer
+    if (extracted && extracted.customerName && /power\s*lines/i.test(extracted.customerName)) {
+      extracted.customerName = '';
+      if (extracted.customerAddress && /bollaram|jinnaram|502\s*325/i.test(extracted.customerAddress)) {
+        extracted.customerAddress = '';
+      }
+    }
+
+    // Secondary enforcement: Ensure motor items have 'REWINDING CHARGES FOR ' prepended if missing
+    if (extracted && Array.isArray(extracted.items)) {
+      extracted.items = extracted.items.map((it: any) => {
+        let desc = (it.description || '').trim();
+        if (/motor|hp|kw|rpm/i.test(desc) && !/rewinding\s*charges/i.test(desc)) {
+          desc = `REWINDING CHARGES FOR ${desc}`;
+        }
+        return {
+          ...it,
+          description: desc,
+          hsn: it.hsn || '9987',
+          quantity: Number(it.quantity) || 1,
+          quantityUnit: it.quantityUnit || 'EA',
+          price: Number(it.price) || 0
+        };
+      });
+    }
+
+    return { success: true, data: extracted };
+  } catch (error: any) {
+    console.error('extractQuotationFromRGP error:', error);
+    return { success: false, error: error.message || 'Failed to extract text from RGP document.' };
+  }
+}
+
+export async function extractQuotationFromRGPUrl(photoUrl: string) {
+  try {
+    if (!photoUrl) return { success: false, error: 'No URL provided' };
+    let base64 = '';
+    let mimeType = 'image/jpeg';
+    if (photoUrl.startsWith('/uploads/')) {
+      const filePath = path.join(process.cwd(), 'public', photoUrl.replace(/^\//, ''));
+      if (!fs.existsSync(filePath)) return { success: false, error: 'Local file not found on server' };
+      const buffer = fs.readFileSync(filePath);
+      base64 = buffer.toString('base64');
+      const ext = path.extname(filePath).toLowerCase();
+      if (ext === '.pdf') mimeType = 'application/pdf';
+      else if (ext === '.png') mimeType = 'image/png';
+      else if (ext === '.webp') mimeType = 'image/webp';
+    } else if (photoUrl.startsWith('http')) {
+      const resp = await fetch(photoUrl);
+      if (!resp.ok) return { success: false, error: `Failed to download image from URL (${resp.status})` };
+      const arrayBuf = await resp.arrayBuffer();
+      base64 = Buffer.from(arrayBuf).toString('base64');
+      const ct = resp.headers.get('content-type');
+      if (ct) mimeType = ct;
+    } else {
+      return { success: false, error: 'Unsupported URL format' };
+    }
+    return await extractQuotationFromRGP(base64, mimeType);
+  } catch (error: any) {
+    console.error('extractQuotationFromRGPUrl error:', error);
     return { success: false, error: error.message || 'Failed to extract document from URL' };
   }
 }

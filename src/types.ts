@@ -44,6 +44,7 @@ export interface InvoiceData {
     upiId: string;
   };
   status?: 'Pending' | 'Cleared';
+  poCopyUrl?: string;
 }
 
 export const initialInvoiceData: InvoiceData = {
@@ -52,6 +53,7 @@ export const initialInvoiceData: InvoiceData = {
   dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
   poNumber: '',
   poDate: '',
+  poCopyUrl: '',
   billTo: {
     name: '',
     address: '',
@@ -98,6 +100,7 @@ export interface QuotationData {
   subject: string;
   rgpNumber: string;
   rgpDate: string;
+  rgpPhotoUrl?: string;
 
   billTo: {
     name: string;
@@ -124,6 +127,7 @@ export const initialQuotationData: QuotationData = {
   subject: '',
   rgpNumber: '',
   rgpDate: '',
+  rgpPhotoUrl: '',
   billTo: {
     name: '',
     address: '',

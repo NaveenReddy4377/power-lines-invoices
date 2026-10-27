@@ -2,9 +2,36 @@
 
 import React, { useState, useEffect } from 'react';
 import { QuotationData, Client, InventoryItem } from '@/types';
-import { Plus, Trash2, Building, ScanLine, FileText, List, IndianRupee, Sparkles, Loader2, History } from 'lucide-react';
-import { getClients, getInventory, getPreviousDescriptions, DescriptionSuggestion } from '@/app/actions';
+import { Plus, Trash2, Building, ScanLine, FileText, List, IndianRupee, Sparkles, Loader2, History, Upload, AlertCircle, CheckCircle2, ExternalLink, Copy, Image as ImageIcon } from 'lucide-react';
+import { getClients, getInventory, getPreviousDescriptions, DescriptionSuggestion, uploadRGPPhoto, extractQuotationFromRGP, extractQuotationFromRGPUrl } from '@/app/actions';
 import { getMotorSuggestions, findMotorPrice, approvedCompanies } from '@/data/motor-rates';
+
+function normalizeDateToInput(dateStr: string): string {
+  if (!dateStr) return '';
+  const trimmed = dateStr.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  const monthMap: Record<string, string> = {
+    jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+    jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12'
+  };
+  const dmyMatch = trimmed.match(/^(\d{1,2})[-/ ]([A-Za-z]{3})[-/ ](\d{2,4})$/);
+  if (dmyMatch) {
+    const day = dmyMatch[1].padStart(2, '0');
+    const mon = monthMap[dmyMatch[2].toLowerCase()] || '01';
+    let yr = dmyMatch[3];
+    if (yr.length === 2) yr = '20' + yr;
+    return `${yr}-${mon}-${day}`;
+  }
+  const numericMatch = trimmed.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})$/);
+  if (numericMatch) {
+    const day = numericMatch[1].padStart(2, '0');
+    const mon = numericMatch[2].padStart(2, '0');
+    let yr = numericMatch[3];
+    if (yr.length === 2) yr = '20' + yr;
+    return `${yr}-${mon}-${day}`;
+  }
+  return trimmed;
+}
 
 interface Props {
   data: QuotationData;
@@ -21,6 +48,16 @@ export default function QuotationForm({ data, onChange, onLoad, isLoading }: Pro
   const [previousSuggestions, setPreviousSuggestions] = useState<DescriptionSuggestion[]>([]);
   const [activeItemIdx, setActiveItemIdx] = useState<number | null>(null);
   const [itemSearch, setItemSearch] = useState('');
+
+  // AI RGP Upload state
+  const [isUploadingRGP, setIsUploadingRGP] = useState(false);
+  const [isExtractingRGP, setIsExtractingRGP] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [extractError, setExtractError] = useState<string | null>(null);
+  const [extractSuccess, setExtractSuccess] = useState(false);
+  const [uploadSuccess, setUploadSuccess] = useState(false);
+  const [extractedCount, setExtractedCount] = useState<number | null>(null);
+  const [copiedUrl, setCopiedUrl] = useState(false);
 
   useEffect(() => {
     getClients().then(setClients).catch(() => {});
@@ -59,6 +96,166 @@ export default function QuotationForm({ data, onChange, onLoad, isLoading }: Pro
     setShowDropdown(false);
   };
 
+  const applyExtractedRGP = (ext: any, fileUrl?: string) => {
+    if (!ext) return;
+
+    let matchedClient = clients.find(c =>
+      c.name.toLowerCase().includes((ext.customerName || '').toLowerCase()) ||
+      (ext.customerName && ext.customerName.toLowerCase().includes(c.name.toLowerCase()))
+    );
+
+    const finalClientName = matchedClient?.name || ext.customerName || data.billTo.name;
+    const finalAddress = matchedClient?.address || ext.customerAddress || data.billTo.address;
+    const finalGstin = matchedClient?.gstin || ext.customerGstin || data.billTo.gstin;
+    const finalPlaceOfSupply = matchedClient?.placeOfSupply || data.billTo.placeOfSupply || 'Telangana';
+
+    let newItems = [...data.items];
+    if (Array.isArray(ext.items) && ext.items.length > 0) {
+      newItems = ext.items.map((it: any) => {
+        let desc = (it.description || '').trim();
+        // Ensure "REWINDING CHARGES FOR" is added to motor items
+        if (/motor|hp|kw|rpm/i.test(desc) && !/rewinding\s*charges/i.test(desc)) {
+          desc = `REWINDING CHARGES FOR ${desc}`;
+        }
+
+        // Try to look up rate if available
+        let estimatedPrice = Number(it.price) || 0;
+        if (estimatedPrice === 0) {
+          try {
+            const foundPrice = findMotorPrice(desc);
+            if (foundPrice && foundPrice.price > 0) {
+              estimatedPrice = foundPrice.price;
+            }
+          } catch (e) {}
+        }
+
+        return {
+          id: crypto.randomUUID(),
+          name: desc,
+          hsn: (it.hsn || '9987').trim(),
+          quantity: Number(it.quantity) || 1,
+          quantityUnit: (it.quantityUnit || 'EA').toUpperCase(),
+          price: estimatedPrice,
+          discount: 0,
+          discountType: 'percentage' as const,
+        };
+      });
+      setExtractedCount(newItems.length);
+    }
+
+    setSearchTerm(finalClientName);
+
+    onChange({
+      ...data,
+      rgpNumber: ext.rgpNumber || data.rgpNumber,
+      rgpDate: normalizeDateToInput(ext.rgpDate) || data.rgpDate,
+      subject: ext.subject || data.subject || 'QUOTATION FOR MOTOR REWINDING AND REPAIR CHARGES',
+      rgpPhotoUrl: fileUrl !== undefined ? fileUrl : (ext.rgpPhotoUrl || data.rgpPhotoUrl),
+      billTo: {
+        ...data.billTo,
+        name: finalClientName,
+        address: finalAddress,
+        gstin: finalGstin,
+        placeOfSupply: finalPlaceOfSupply,
+      },
+      items: newItems,
+    });
+  };
+
+  const handleRGPFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingRGP(true);
+    setIsExtractingRGP(true);
+    setUploadError(null);
+    setExtractError(null);
+    setUploadSuccess(false);
+    setExtractSuccess(false);
+    setExtractedCount(null);
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64 = reader.result as string;
+        const mimeType = file.type || (file.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg');
+
+        const [uploadRes, ocrRes] = await Promise.allSettled([
+          uploadRGPPhoto(base64, file.name, mimeType),
+          extractQuotationFromRGP(base64, mimeType)
+        ]);
+
+        let storedUrl = data.rgpPhotoUrl;
+        if (uploadRes.status === 'fulfilled' && uploadRes.value.success && uploadRes.value.url) {
+          storedUrl = uploadRes.value.url;
+          setUploadSuccess(true);
+        } else if (uploadRes.status === 'fulfilled' && uploadRes.value.error) {
+          console.warn('RGP upload notice:', uploadRes.value.error);
+        }
+
+        if (ocrRes.status === 'fulfilled' && ocrRes.value.success && ocrRes.value.data) {
+          applyExtractedRGP(ocrRes.value.data, storedUrl);
+          setExtractSuccess(true);
+          setTimeout(() => setExtractSuccess(false), 8000);
+        } else {
+          const errMsg = ocrRes.status === 'fulfilled'
+            ? ocrRes.value.error
+            : (ocrRes.reason?.message || 'Failed to extract RGP details');
+          setExtractError(errMsg);
+          if (storedUrl) {
+            onChange({ ...data, rgpPhotoUrl: storedUrl });
+          }
+        }
+
+        setIsUploadingRGP(false);
+        setIsExtractingRGP(false);
+      };
+
+      reader.onerror = () => {
+        setUploadError('Failed to read file from disk.');
+        setIsUploadingRGP(false);
+        setIsExtractingRGP(false);
+      };
+
+      reader.readAsDataURL(file);
+    } catch (err: any) {
+      setUploadError(err.message || 'RGP file upload failed.');
+      setIsUploadingRGP(false);
+      setIsExtractingRGP(false);
+    }
+  };
+
+  const handleReScanRGPWithAI = async () => {
+    if (!data.rgpPhotoUrl) {
+      alert('Please upload an RGP document first.');
+      return;
+    }
+    setIsExtractingRGP(true);
+    setExtractError(null);
+    setExtractSuccess(false);
+
+    try {
+      const res = await extractQuotationFromRGPUrl(data.rgpPhotoUrl);
+      if (res.success && res.data) {
+        applyExtractedRGP(res.data);
+        setExtractSuccess(true);
+        setTimeout(() => setExtractSuccess(false), 8000);
+      } else {
+        setExtractError(res.error || 'Failed to read RGP document with AI.');
+      }
+    } catch (e: any) {
+      setExtractError(e.message || 'AI document scan failed.');
+    } finally {
+      setIsExtractingRGP(false);
+    }
+  };
+
+  const handleCopyRGPUrl = (url: string) => {
+    navigator.clipboard.writeText(url);
+    setCopiedUrl(true);
+    setTimeout(() => setCopiedUrl(false), 2000);
+  };
+
   const addItem = () => {
     onChange({
       ...data,
@@ -92,6 +289,174 @@ export default function QuotationForm({ data, onChange, onLoad, isLoading }: Pro
 
   return (
     <div className="p-6 space-y-8 pb-32">
+
+      {/* AI RGP Document Reader & Quotation Auto-Fill Banner */}
+      <div className="bg-gradient-to-r from-purple-950/40 via-slate-900 to-purple-950/20 border border-purple-500/30 rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-xl shadow-purple-950/20 relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/5 rounded-full blur-2xl pointer-events-none" />
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-purple-500/20 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 bg-purple-500/20 border border-purple-500/40 rounded-xl text-purple-400">
+              <Sparkles className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-purple-300 tracking-wide uppercase">
+                  AI RGP Reader & Quotation Generator
+                </h3>
+                <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/40">
+                  Rewinding Charges Auto-Added
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Upload Returnable Gate Pass (RGP / Challan). AI extracts Client, RGP No, Date, & adds rewinding charges to all motor line items.
+              </p>
+            </div>
+          </div>
+          {data.rgpPhotoUrl && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-purple-500/10 border border-purple-500/30 rounded-full text-xs font-semibold text-purple-300 self-start sm:self-auto">
+              <CheckCircle2 className="w-3.5 h-3.5 text-purple-400" /> RGP Attached
+            </span>
+          )}
+        </div>
+
+        {/* Upload Status Alerts */}
+        {extractSuccess && (
+          <div className="p-3 bg-purple-950/70 border border-purple-500/50 rounded-xl text-xs text-purple-300 flex items-center gap-2.5 animate-in fade-in">
+            <CheckCircle2 className="w-4 h-4 text-purple-400 shrink-0" />
+            <div className="flex-1">
+              <span className="font-bold">AI Extraction Complete!</span> Client, RGP details{extractedCount ? `, and ${extractedCount} item(s) with rewinding charges` : ''} have been auto-populated.
+            </div>
+          </div>
+        )}
+        {(uploadError || extractError) && (
+          <div className="p-3 bg-red-950/70 border border-red-500/50 rounded-xl text-xs text-red-300 flex items-center gap-2.5">
+            <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+            <div className="flex-1 font-medium">{uploadError || extractError}</div>
+          </div>
+        )}
+
+        {/* Drag & Drop Upload Zone */}
+        <label className={`block border-2 border-dashed rounded-xl p-4 transition-all cursor-pointer group ${
+          isExtractingRGP || isUploadingRGP
+            ? 'border-purple-500 bg-purple-500/10 cursor-wait'
+            : 'border-purple-500/40 hover:border-purple-400 hover:bg-purple-500/5 bg-slate-950/60'
+        }`}>
+          <input
+            type="file"
+            accept="image/*,application/pdf"
+            onChange={handleRGPFileUpload}
+            disabled={isUploadingRGP || isExtractingRGP}
+            className="hidden"
+          />
+          {isExtractingRGP || isUploadingRGP ? (
+            <div className="flex flex-col items-center gap-2.5 py-2 text-center">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-6 h-6 text-purple-400 animate-pulse" />
+                <Loader2 className="w-7 h-7 text-purple-400 animate-spin" />
+              </div>
+              <span className="text-xs font-bold text-purple-300 tracking-wide">
+                AI Reading RGP Copy & Adding Rewinding Charges...
+              </span>
+              <span className="text-[11px] text-slate-400">
+                Extracting Client Name, Address, RGP No, Date, and converting motor lines into Rewinding Charges
+              </span>
+            </div>
+          ) : (
+            <div className="flex flex-col sm:flex-row items-center gap-3 py-1">
+              <div className="p-3 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-400 group-hover:scale-110 group-hover:bg-purple-500/20 transition-all shrink-0">
+                <Upload className="w-6 h-6" />
+              </div>
+              <div className="text-center sm:text-left">
+                <div className="text-xs font-bold text-purple-300 group-hover:text-purple-200 transition-colors">
+                  Click or drag RGP / Gate Pass copy (Image or PDF) here
+                </div>
+                <div className="text-[11px] text-slate-400 mt-0.5">
+                  🤖 AI extracts client, RGP No, date, and automatically formats motor descriptions with rewinding charges & HSN 9987
+                </div>
+              </div>
+            </div>
+          )}
+        </label>
+
+        {/* Document Preview Card if attached */}
+        {data.rgpPhotoUrl && (
+          <div className="p-3 bg-slate-950/90 border border-slate-800 rounded-xl flex flex-col sm:flex-row items-center gap-3.5 shadow-inner">
+            <div className="relative group shrink-0 w-24 h-24 rounded-lg overflow-hidden border border-slate-700 bg-slate-900 flex items-center justify-center">
+              {data.rgpPhotoUrl.toLowerCase().includes('.pdf') ? (
+                <div className="flex flex-col items-center justify-center text-purple-400 p-2 text-center">
+                  <FileText className="w-8 h-8 mb-1" />
+                  <span className="text-[9px] font-bold uppercase tracking-wider">PDF RGP</span>
+                </div>
+              ) : (
+                <img
+                  src={data.rgpPhotoUrl}
+                  alt="Stored RGP Document"
+                  className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                  onError={(e) => {
+                    (e.target as HTMLElement).style.display = 'none';
+                  }}
+                />
+              )}
+              <a
+                href={data.rgpPhotoUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity text-xs font-bold gap-1"
+                title="Click to view full RGP document in new tab"
+              >
+                <ExternalLink className="w-4 h-4" />
+              </a>
+            </div>
+
+            <div className="flex-1 min-w-0 text-center sm:text-left space-y-1">
+              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-500/15 text-purple-400 border border-purple-500/30">
+                  <CheckCircle2 className="w-3 h-3 text-purple-400" /> Stored in Cloud Storage
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono truncate max-w-[200px]" title={data.rgpPhotoUrl}>
+                  {data.rgpPhotoUrl.split('/').pop()?.split('?')[0] || 'rgp_document'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-300">
+                This RGP document is safely stored in database storage for future audit and reference.
+              </p>
+              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
+                <a
+                  href={data.rgpPhotoUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/30 rounded-md text-[11px] font-bold transition-colors cursor-pointer"
+                >
+                  <ExternalLink className="w-3 h-3" /> View RGP Copy
+                </a>
+                <button
+                  type="button"
+                  onClick={() => handleCopyRGPUrl(data.rgpPhotoUrl!)}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-md text-[11px] font-medium transition-colors cursor-pointer"
+                >
+                  <Copy className="w-3 h-3" /> {copiedUrl ? 'Copied Link!' : 'Copy Link'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleReScanRGPWithAI}
+                  disabled={isExtractingRGP}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 rounded-md text-[11px] font-medium transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <Sparkles className="w-3 h-3" /> Re-scan with AI
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onChange({ ...data, rgpPhotoUrl: '' })}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded-md text-[11px] font-medium transition-colors cursor-pointer"
+                >
+                  <Trash2 className="w-3 h-3" /> Clear
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Document Info */}
       <div className="space-y-4">
