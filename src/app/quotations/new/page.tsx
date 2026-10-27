@@ -9,7 +9,7 @@ import LoadingOverlay from '@/components/LoadingOverlay';
 import FailureModal from '@/components/FailureModal';
 import SuccessModal from '@/components/SuccessModal';
 import { QuotationData, initialQuotationData } from '@/types';
-import { Printer, Save, Loader2, Mail, Send, ArrowLeft, Edit3 } from 'lucide-react';
+import { Printer, Save, Loader2, Mail, Send, ArrowLeft, Edit3, Columns2, Eye, ZoomIn, ZoomOut } from 'lucide-react';
 import { saveQuotation, loadQuotation, getNextQuotationNumber } from '@/app/actions';
 import Link from 'next/link';
 
@@ -27,6 +27,8 @@ function NewQuotation() {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingDocId, setLoadingDocId] = useState('');
   const [isEmailOpen, setIsEmailOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<'split' | 'form' | 'preview'>('split');
+  const [previewZoom, setPreviewZoom] = useState<number>(0.85);
   const [failureModal, setFailureModal] = useState<{ isOpen: boolean; message: string; details?: string; onRetry?: () => void }>({
     isOpen: false,
     message: '',
@@ -47,6 +49,17 @@ function NewQuotation() {
   const hasInitializedRef = useRef<string | null>(null);
 
   useEffect(() => {
+    // Responsive viewMode detection for mobile and tablets
+    if (typeof window !== 'undefined') {
+      if (window.innerWidth < 640) {
+        setViewMode('form');
+        setPreviewZoom(0.48);
+      } else if (window.innerWidth < 1024) {
+        setViewMode('form');
+        setPreviewZoom(0.75);
+      }
+    }
+
     const key = editId || 'new';
     if (hasInitializedRef.current === key) return;
     hasInitializedRef.current = key;
@@ -211,18 +224,65 @@ function NewQuotation() {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          {/* View Mode Switcher - Responsive across Mobile, Tablet & Desktop */}
+          <div className="flex items-center bg-slate-900 border border-slate-800 rounded-lg p-0.5 shadow-inner">
+            <button
+              type="button"
+              onClick={() => { setViewMode('split'); setPreviewZoom(0.85); }}
+              className={`hidden md:flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                viewMode === 'split' ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Split View (Form + Preview)"
+            >
+              <Columns2 className="w-3.5 h-3.5" />
+              <span>Split</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('form')}
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                viewMode === 'form' ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Form Focus"
+            >
+              <Edit3 className="w-3.5 h-3.5" />
+              <span>Form</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setViewMode('preview'); setPreviewZoom(typeof window !== 'undefined' && window.innerWidth < 640 ? 0.48 : 1); }}
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                viewMode === 'preview' ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Preview Focus"
+            >
+              <Eye className="w-3.5 h-3.5" />
+              <span>Preview</span>
+            </button>
+          </div>
+
           {isLoading && (
             <div className="flex items-center gap-1.5 text-xs text-purple-400 font-bold bg-purple-500/10 border border-purple-500/30 px-3 py-1.5 rounded-lg">
               <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Loading Quotation...</span>
+              <span className="hidden sm:inline">Loading Quotation...</span>
             </div>
           )}
           <button
             onClick={handleSaveAndProcess}
             disabled={isSaving || isLoading || !data.billTo.name.trim() || data.items.length === 0}
-            className="flex items-center gap-2 rounded-md bg-purple-600 hover:bg-purple-500 text-white px-5 py-2 text-sm font-bold shadow-[0_0_15px_rgba(147,51,234,0.3)] transition-all focus:ring-2 focus:ring-purple-400 focus:outline-none disabled:opacity-50 cursor-pointer"
+            className="flex items-center gap-1.5 sm:gap-2 rounded-md bg-purple-600 hover:bg-purple-500 text-white px-3 sm:px-5 py-2 text-xs sm:text-sm font-bold shadow-[0_0_15px_rgba(147,51,234,0.3)] transition-all focus:ring-2 focus:ring-purple-400 focus:outline-none disabled:opacity-50 cursor-pointer"
           >
-            {isSaving ? <span className="animate-pulse flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Processing...</span> : <><Send className="w-4 h-4" /> Save, Download & Email</>}
+            {isSaving ? (
+              <span className="animate-pulse flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" /> Processing...
+              </span>
+            ) : (
+              <>
+                <Send className="w-4 h-4 shrink-0" />
+                <span className="hidden sm:inline">Save, Download & Email</span>
+                <span className="sm:hidden">Save & Send</span>
+              </>
+            )}
           </button>
         </div>
       </header>
@@ -271,19 +331,73 @@ function NewQuotation() {
       />
 
       {/* Main */}
-      <main className="flex-1 flex flex-col md:flex-row overflow-hidden print:block">
+      <main className="flex-1 flex flex-col md:flex-row overflow-hidden print:block bg-slate-950">
 
         {/* Left Pane - Form */}
-        <section className="w-full md:w-[400px] lg:w-[450px] xl:w-[500px] flex-shrink-0 border-b md:border-b-0 md:border-r border-slate-800 bg-slate-900/40 overflow-y-auto no-scrollbar print:hidden flex flex-col md:block">
-          <QuotationForm data={data} onChange={setData} onLoad={handleLoad} isLoading={isLoading} />
-        </section>
+        {viewMode !== 'preview' && (
+          <section className={`border-b md:border-b-0 md:border-r border-slate-800 bg-slate-900/40 overflow-y-auto no-scrollbar print:hidden flex flex-col md:block custom-scrollbar ${
+            viewMode === 'form' 
+              ? 'flex-1 w-full max-w-4xl mx-auto py-6 px-4 sm:px-8' 
+              : 'w-full md:w-[500px] lg:w-[550px] xl:w-[600px] flex-shrink-0'
+          }`}>
+            <QuotationForm data={data} onChange={setData} onLoad={handleLoad} isLoading={isLoading} />
+          </section>
+        )}
 
         {/* Right Pane - Live Preview */}
-        <section className="flex-1 overflow-auto bg-slate-950 p-4 sm:p-8 flex items-start justify-center md:items-start md:justify-center print:block print:p-0 print:bg-white min-h-[50vh] md:min-h-0">
-          <div className="overflow-x-auto max-w-full">
-            <QuotationPreview data={data} />
-          </div>
-        </section>
+        {viewMode !== 'form' && (
+          <section className="flex-1 overflow-auto bg-slate-950/90 p-4 sm:p-6 flex flex-col items-center print:block print:p-0 print:bg-white custom-scrollbar">
+            {/* Zoom Controls Bar */}
+            <div className="mb-3 flex items-center justify-between w-full max-w-[210mm] px-2 print:hidden">
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
+                <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
+                <span className="tracking-wide">Live A4 Printable Quotation</span>
+              </div>
+              <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg p-1 shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => setPreviewZoom(prev => Math.max(0.5, +(prev - 0.05).toFixed(2)))}
+                  className="p-1 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition-colors cursor-pointer"
+                  title="Zoom Out"
+                >
+                  <ZoomOut className="w-3.5 h-3.5" />
+                </button>
+                <span className="text-[11px] font-mono font-bold text-purple-400 px-1.5 min-w-[42px] text-center">
+                  {Math.round(previewZoom * 100)}%
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPreviewZoom(prev => Math.min(1.4, +(prev + 0.05).toFixed(2)))}
+                  className="p-1 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition-colors cursor-pointer"
+                  title="Zoom In"
+                >
+                  <ZoomIn className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewZoom(viewMode === 'split' ? 0.85 : 1)}
+                  className="px-2 py-0.5 text-[10px] font-bold text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition-colors cursor-pointer border-l border-slate-800 ml-1"
+                  title="Reset Zoom"
+                >
+                  Fit
+                </button>
+              </div>
+            </div>
+
+            {/* Scaled Preview Wrapper with safe margins */}
+            <div className="w-full flex justify-center overflow-visible">
+              <div 
+                className="transition-transform duration-150 origin-top shadow-[0_20px_50px_rgba(0,0,0,0.6)] print:shadow-none print:transform-none"
+                style={{
+                  transform: `scale(${previewZoom})`,
+                  marginBottom: `${Math.max(0, (1 - previewZoom) * -297)}mm`
+                }}
+              >
+                <QuotationPreview data={data} />
+              </div>
+            </div>
+          </section>
+        )}
       </main>
     </div>
   );

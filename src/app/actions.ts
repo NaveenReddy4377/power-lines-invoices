@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { InvoiceData, QuotationData, Client, InventoryItem, DeliveryChallanData, CashBillData, PendingBill, BillFollowUp } from '@/types';
 import legacyCompanies from '@/data/companies.json';
+import { revalidatePath } from 'next/cache';
 import {
   syncInvoiceToSupabase,
   syncCashBillToSupabase,
@@ -29,7 +30,11 @@ import {
   getLatestQuotationNoFromSupabase,
   getLatestDcNoFromSupabase,
   getLatestCashBillNoFromSupabase,
+  updateInvoiceStatusInSupabase,
+  batchUpdateInvoiceStatusesInSupabase,
+  updateQuotationStatusInSupabase,
 } from '@/lib/supabaseSync';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { sendPendingBillEmail } from '@/lib/pendingBillEmail';
 
 // Helper to get or create a named sheet tab
@@ -912,39 +917,126 @@ export async function saveMotorQuotation(data: any) {
 
 export async function updateRecordStatus(type: 'invoices' | 'quotations', id: string, newStatus: string) {
   try {
-    const doc = await getSheetSafely();
-    const sheet = type === 'invoices' ? doc.sheetsByIndex[0] : doc.sheetsByTitle['Quotations'];
-    const idCol = type === 'invoices' ? 'Invoice No' : 'Quotation No';
-    
-    const rows = await sheet.getRows();
-    const row = rows.find((r: any) => r.get(idCol) === id);
-    
-    if (row) {
-      await ensureStatusHeader(sheet, type === 'invoices' 
-        ? ['Invoice No', 'Date', 'Billed To', 'GSTIN', 'Sum Total (₹)', 'CGST (₹)', 'SGST (₹)', 'Grand Total (₹)', 'PO Number', 'PO Date', 'Status', 'RawData']
-        : ['Quotation No', 'Date', 'Valid Until', 'Billed To', 'GSTIN', 'RGP No', 'RGP Date', 'Grand Total (₹)', 'Status', 'RawData']
-      );
+    const cleanId = (id || '').trim();
+    const normStatus: 'Cleared' | 'Pending' = ['cleared', 'paid', 'cleared / paid'].includes(newStatus.trim().toLowerCase())
+      ? 'Cleared'
+      : 'Pending';
 
-      row.set('Status', newStatus);
-      
-      const raw = row.get('RawData');
-      if (raw) {
-        try {
-          const parsed = JSON.parse(raw);
-          parsed.status = newStatus;
-          row.set('RawData', JSON.stringify(parsed));
-        } catch (e) {
-          console.error('Failed to update RawData JSON:', e);
+    // 1. Update Google Sheets
+    const sheetPromise = (async () => {
+      try {
+        const doc = await getSheetSafely();
+        const sheet = type === 'invoices' ? doc.sheetsByIndex[0] : doc.sheetsByTitle['Quotations'];
+        const idCol = type === 'invoices' ? 'Invoice No' : 'Quotation No';
+        
+        const rows = await sheet.getRows();
+        const row = rows.find((r: any) => (r.get(idCol) || '').toString().trim().toUpperCase() === cleanId.toUpperCase());
+        
+        if (row) {
+          await ensureStatusHeader(sheet, type === 'invoices' 
+            ? ['Invoice No', 'Date', 'Billed To', 'GSTIN', 'Sum Total (₹)', 'CGST (₹)', 'SGST (₹)', 'Grand Total (₹)', 'PO Number', 'PO Date', 'Status', 'RawData']
+            : ['Quotation No', 'Date', 'Valid Until', 'Billed To', 'GSTIN', 'RGP No', 'RGP Date', 'Grand Total (₹)', 'Status', 'RawData']
+          );
+
+          row.set('Status', normStatus);
+          
+          const raw = row.get('RawData');
+          if (raw) {
+            try {
+              const parsed = JSON.parse(raw);
+              parsed.status = normStatus;
+              row.set('RawData', JSON.stringify(parsed));
+            } catch (e) {
+              console.error('Failed to update RawData JSON:', e);
+            }
+          }
+          
+          await row.save();
+          return true;
         }
+        return false;
+      } catch (sheetErr: any) {
+        console.warn('Google Sheets update warning in updateRecordStatus:', sheetErr?.message);
+        return false;
       }
-      
-      await row.save();
+    })();
+
+    // 2. Concurrently update Supabase database
+    const supabasePromise = (async () => {
+      if (type === 'invoices') {
+        return await updateInvoiceStatusInSupabase(cleanId, normStatus);
+      } else {
+        return await updateQuotationStatusInSupabase(cleanId, normStatus);
+      }
+    })();
+
+    const [sheetUpdated, supaUpdated] = await Promise.all([sheetPromise, supabasePromise]);
+
+    revalidatePath('/');
+    if (sheetUpdated || supaUpdated) {
       return { success: true };
     }
-    return { success: false, error: 'Record not found' };
+    return { success: false, error: 'Record not found in Sheets or Database' };
   } catch (error: any) {
     console.error('updateRecordStatus error:', error);
     return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Server Action to sync statuses from Google Sheets into Supabase database.
+ * Useful when records have been edited or marked cleared directly in the spreadsheet.
+ */
+export async function syncInvoiceStatusesFromGoogleSheets(): Promise<{
+  success: boolean;
+  updatedCount: number;
+  totalScanned: number;
+  message?: string;
+  error?: string;
+}> {
+  try {
+    const doc = await getSheetSafely(15000, true);
+    const sheet = doc.sheetsByIndex[0];
+    const rows = await sheet.getRows();
+
+    const updates: { invoiceNo: string; status: string }[] = [];
+    for (const r of rows) {
+      const invNo = (r.get('Invoice No') || '').toString().trim();
+      if (!invNo) continue;
+      const sheetStatus = (r.get('Status') || 'Pending').toString().trim();
+      const normStatus = ['cleared', 'paid', 'cleared / paid'].includes(sheetStatus.toLowerCase()) ? 'Cleared' : 'Pending';
+      updates.push({ invoiceNo: invNo, status: normStatus });
+    }
+
+    const updatedCount = await batchUpdateInvoiceStatusesInSupabase(updates);
+
+    // Also check Quotations sheet
+    try {
+      const qSheet = doc.sheetsByTitle['Quotations'];
+      if (qSheet) {
+        const qRows = await qSheet.getRows();
+        for (const r of qRows) {
+          const qNo = (r.get('Quotation No') || '').toString().trim();
+          if (!qNo) continue;
+          const qStatus = (r.get('Status') || 'Pending').toString().trim();
+          const normQStatus = ['cleared', 'paid'].includes(qStatus.toLowerCase()) ? 'Cleared' : 'Pending';
+          await updateQuotationStatusInSupabase(qNo, normQStatus);
+        }
+      }
+    } catch (e) {
+      console.warn('Quotation status sync warning:', e);
+    }
+
+    revalidatePath('/');
+    return {
+      success: true,
+      updatedCount,
+      totalScanned: updates.length,
+      message: `Successfully synchronized ${updates.length} invoices with Google Sheets!`
+    };
+  } catch (error: any) {
+    console.error('syncInvoiceStatusesFromGoogleSheets error:', error);
+    return { success: false, updatedCount: 0, totalScanned: 0, error: error.message };
   }
 }
 
@@ -1386,36 +1478,127 @@ export async function loadDeliveryChallan(dcNo: string) {
         return { success: true, data: reconstructed };
       }
     }
+    // Fallback: check Supabase database if not found in Google Sheets
+    try {
+      const supaDc = await fetchDeliveryChallanFromSupabase(dcNo);
+      if (supaDc) {
+        return { success: true, data: supaDc };
+      }
+    } catch (e) {}
+
     return { success: false, error: `Delivery Challan "${dcNo}" not found.` };
   } catch (error: any) {
     console.error('loadDeliveryChallan error:', error);
+    try {
+      const supaDc = await fetchDeliveryChallanFromSupabase(dcNo);
+      if (supaDc) {
+        return { success: true, data: supaDc };
+      }
+    } catch (e) {}
     return { success: false, error: 'Load failed: ' + error.message };
   }
 }
 
 export async function uploadRGPPhoto(base64Data: string, originalFileName: string, mimeType: string = 'image/jpeg') {
   try {
-    const ext = path.extname(originalFileName) || '.jpg';
+    const ext = path.extname(originalFileName) || (mimeType?.includes('pdf') ? '.pdf' : '.jpg');
     const safeName = `rgp_${Date.now()}_${Math.random().toString(36).substring(2, 8)}${ext}`;
-
-    // 1. Try Google Drive permanent unexpiring upload
-    const driveUrl = await uploadToGoogleDrive(safeName, base64Data, mimeType);
-    if (driveUrl) {
-      return { success: true, url: driveUrl, storage: 'drive' };
-    }
-
-    // 2. Persistent local public storage fallback
-    const uploadsDir = path.join(process.cwd(), 'public', 'uploads', 'rgp');
-    if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true });
-    }
-
     const cleanBase64 = base64Data.replace(/^data:[^;]+;base64,/, '');
-    const filePath = path.join(uploadsDir, safeName);
-    fs.writeFileSync(filePath, Buffer.from(cleanBase64, 'base64'));
+    const buffer = Buffer.from(cleanBase64, 'base64');
 
-    const relativeUrl = `/uploads/rgp/${safeName}`;
-    return { success: true, url: relativeUrl, storage: 'local' };
+    let storedUrl: string | null = null;
+    let storageProvider = 'local';
+
+    // 1. Primary: Upload to Supabase Storage bucket 'rgp-uploads' (Permanent cloud database storage)
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('rgp-uploads')
+          .upload(safeName, buffer, {
+            contentType: mimeType || 'image/jpeg',
+            upsert: true,
+          });
+
+        if (!uploadError && uploadData) {
+          const { data: pubData } = supabase.storage
+            .from('rgp-uploads')
+            .getPublicUrl(safeName);
+          if (pubData?.publicUrl) {
+            storedUrl = pubData.publicUrl;
+            storageProvider = 'supabase';
+          }
+        } else if (uploadError) {
+          console.warn('Supabase storage upload notice:', uploadError.message);
+        }
+      } catch (supaErr: any) {
+        console.warn('Supabase storage error:', supaErr?.message || supaErr);
+      }
+    }
+
+    // 2. Secondary backup: Upload to Google Drive if credentials available
+    let driveUrl: string | null = null;
+    try {
+      driveUrl = await uploadToGoogleDrive(safeName, base64Data, mimeType);
+      if (!storedUrl && driveUrl) {
+        storedUrl = driveUrl;
+        storageProvider = 'drive';
+      }
+    } catch (dErr) {
+      console.warn('Google Drive backup upload notice:', dErr);
+    }
+
+    // 3. Fallback: Persistent local public storage
+    try {
+      const uploadsDir = path.join(process.cwd(), 'public', 'uploads', 'rgp');
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+      const filePath = path.join(uploadsDir, safeName);
+      fs.writeFileSync(filePath, buffer);
+
+      if (!storedUrl) {
+        storedUrl = `/uploads/rgp/${safeName}`;
+        storageProvider = 'local';
+      }
+    } catch (fsErr) {
+      console.warn('Local file write error:', fsErr);
+    }
+
+    if (!storedUrl) {
+      return { success: false, error: 'Failed to save RGP photo to storage.' };
+    }
+
+    // 4. Immediate persistence in Google Sheets 'RGP Gate Passes' tab for future reference
+    try {
+      const doc = await getSheetSafely(5000);
+      let rgpSheet = doc.sheetsByTitle['RGP Gate Passes'];
+      const rgpHeaders = ['Uploaded At', 'File Name', 'RGP Photo URL', 'Storage Provider', 'RGP No', 'Customer Name', 'DC No'];
+      if (!rgpSheet) {
+        rgpSheet = await doc.addSheet({ title: 'RGP Gate Passes', headerValues: rgpHeaders });
+      } else {
+        try { await rgpSheet.loadHeaderRow(); } catch (e) {}
+      }
+
+      await rgpSheet.addRow({
+        'Uploaded At': new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+        'File Name': originalFileName || safeName,
+        'RGP Photo URL': storedUrl,
+        'Storage Provider': storageProvider,
+        'RGP No': '',
+        'Customer Name': '',
+        'DC No': '',
+      });
+    } catch (sheetLogErr: any) {
+      console.warn('Immediate Google Sheet log notice:', sheetLogErr?.message || sheetLogErr);
+    }
+
+    return { 
+      success: true, 
+      url: storedUrl, 
+      storage: storageProvider, 
+      driveUrl, 
+      fileName: originalFileName || safeName 
+    };
   } catch (error: any) {
     console.error('uploadRGPPhoto error:', error);
     return { success: false, error: error.message || 'Failed to save photo' };
@@ -1470,6 +1653,25 @@ export async function saveDeliveryChallanToSpreadsheet(data: DeliveryChallanData
         await targetRow.save();
       } else {
         await sheet.addRow(rowObj);
+      }
+
+      // Also link DC metadata into 'RGP Gate Passes' sheet if rgpPhotoUrl is present
+      if (data.rgpPhotoUrl) {
+        try {
+          const rgpSheet = doc.sheetsByTitle['RGP Gate Passes'];
+          if (rgpSheet) {
+            const rgpRows = await rgpSheet.getRows();
+            const matchingRow = rgpRows.find(r => r.get('RGP Photo URL') === data.rgpPhotoUrl);
+            if (matchingRow) {
+              matchingRow.set('DC No', data.dcNo || '');
+              matchingRow.set('RGP No', data.rgpNo || '');
+              matchingRow.set('Customer Name', data.customerName || '');
+              await matchingRow.save();
+            }
+          }
+        } catch (e) {
+          // ignore background update error
+        }
       }
     })();
     const supabasePromise = syncDeliveryChallanToSupabase(data);
@@ -1985,13 +2187,25 @@ export async function extractDCFromImage(base64Data: string, mimeType: string = 
     const promptText = `You are an expert OCR AI specializing in Indian industrial Delivery Challans, Returnable Gate Passes (RGP), and Gate Passes.
 Carefully analyze the provided document image or PDF page and extract all relevant fields into a strict JSON object with NO markdown formatting or additional commentary.
 
+CRITICAL RULES FOR CUSTOMER / CLIENT EXTRACTION:
+1. "POWER LINES ELECTRICAL WORKS" (or any variation like "Powerlines", "Power Lines Electrical") is NEVER the customer. Power Lines Electrical Works is the service vendor / repair contractor receiving or delivering the equipment. DO NOT output "Power Lines Electrical Works" as customerName!
+2. The "customerName" is the CLIENT company that issued or owns the RGP / Gate Pass. Common client companies include:
+   - AUROBINDO PHARMA LTD (or any unit of Aurobindo Pharma Ltd)
+   - APITORIA PHARMA PRIVATE LIMITED (or any unit of Apitoria)
+   - AURO PEPTIDES / AUROBINDO PEPTIDES
+   - APL HEALTH CARE LTD
+   - EUGIA PHARMA / EUGIA SEZ PRIVATE LIMITED
+   - VSP Ispat / other manufacturing clients
+   Look at the header, letterhead, logo, company title at the top, or the issuing department of the document to extract the true client/customer name.
+3. If the document says "To: Power Lines Electrical Works" or "Vendor: Power Lines Electrical Works", then the company sending/issuing the pass is the customer.
+
 JSON schema requirement:
 {
-  "customerName": "Company/Party Name (e.g. APITORIA PHARMA PRIVATE LIMITED, VSP Ispat Pvt. Ltd.)",
-  "customerAddress": "Full address including village, district, state, pincode if visible",
-  "customerGstin": "GSTIN if present",
+  "customerName": "The CLIENT company name (e.g. APITORIA PHARMA PRIVATE LIMITED UNIT - 1, AUROBINDO PHARMA LTD UNIT - 3, AURO PEPTIDES, EUGIA SEZ PRIVATE LIMITED) - NEVER Power Lines Electrical Works",
+  "customerAddress": "Full client address including unit, village, mandal, district, state, pincode if visible",
+  "customerGstin": "GSTIN of the client if present",
   "rgpNo": "RGP No or Gate Pass No (e.g. 360/RGP/26-27/00125, 1008)",
-  "rgpDate": "Date of RGP/Gate Pass in YYYY-MM-DD format if possible",
+  "rgpDate": "Date of RGP/Gate Pass in YYYY-MM-DD or DD-MMM-YYYY format",
   "poNo": "PO No if visible",
   "poDate": "PO Date if visible",
   "vehicleNo": "Vehicle No (e.g. TS 08UF 9062, TG15T6810)",
@@ -2104,6 +2318,14 @@ Return ONLY raw valid JSON text.`;
     const parsed = JSON.parse(jsonToParse);
     const extracted = Array.isArray(parsed) ? parsed[0] : parsed;
 
+    // Guard: Power Lines Electrical Works is NEVER the customer/client
+    if (extracted && extracted.customerName && /power\s*lines/i.test(extracted.customerName)) {
+      extracted.customerName = '';
+      if (extracted.customerAddress && /bollaram|jinnaram|502\s*325/i.test(extracted.customerAddress)) {
+        extracted.customerAddress = '';
+      }
+    }
+
     return { success: true, data: extracted };
   } catch (error: any) {
     console.error('extractDCFromImage error:', error);
@@ -2174,6 +2396,10 @@ export async function importExistingSheetsToSupabase() {
           if (raw) {
             try {
               const data = JSON.parse(raw);
+              const sheetStatus = (r.get('Status') || '').toString().trim();
+              if (sheetStatus) {
+                data.status = ['cleared', 'paid', 'cleared / paid'].includes(sheetStatus.toLowerCase()) ? 'Cleared' : 'Pending';
+              }
               await syncInvoiceToSupabase(data);
               summary.invoices++;
             } catch (e) {}
@@ -2234,6 +2460,10 @@ export async function importExistingSheetsToSupabase() {
           if (raw) {
             try {
               const data = JSON.parse(raw);
+              const sheetStatus = (r.get('Status') || '').toString().trim();
+              if (sheetStatus) {
+                data.status = ['cleared', 'paid', 'cleared / paid'].includes(sheetStatus.toLowerCase()) ? 'Cleared' : 'Pending';
+              }
               await syncQuotationToSupabase(data);
               summary.quotations++;
             } catch (e) {}

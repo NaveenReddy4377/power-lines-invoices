@@ -247,216 +247,235 @@ export default function InvoiceForm({ data, onChange, onLoad, isLoading }: Props
               </button>
             </div>
             
-            <div className="grid grid-cols-[1fr,80px] gap-3">
-              <div className="relative">
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-[10px] uppercase font-bold text-slate-500">Description</label>
-                  <span className="text-[9px] text-amber-400/90 font-medium">Type HP (e.g. 5 HP) for auto-rate</span>
-                </div>
-                <input 
-                  type="text" 
-                  className="w-full bg-slate-900 border border-slate-700 rounded p-1.5 text-sm placeholder:text-slate-600"
-                  placeholder="e.g. 5 HP Motor Rewinding"
-                  value={item.name} 
-                  autoComplete="off"
-                  onFocus={() => { setActiveItemIdx(index); setItemSearch(item.name); }}
-                  onBlur={() => setTimeout(() => setActiveItemIdx(null), 200)}
-                  onChange={e => {
-                    const val = e.target.value;
-                    setItemSearch(val);
-                    setActiveItemIdx(index);
-
-                    const motorMatch = findMotorPrice(val);
-                    if (motorMatch) {
-                      const newItems = [...data.items];
-                      newItems[index] = {
-                        ...newItems[index],
-                        name: val,
-                        price: motorMatch.price,
-                        hsn: newItems[index].hsn || motorMatch.hsn || '9987'
-                      };
-                      onChange({ ...data, items: newItems });
-                    } else {
-                      updateItem(index, 'name', val);
-                    }
-                  }} 
-                />
-                {activeItemIdx === index && (() => {
-                  const query = (itemSearch || '').trim().toLowerCase();
-                  const motorList = getMotorSuggestions(itemSearch);
-                  const invList = inventory.filter(s =>
-                    s.name.toLowerCase().includes(query) && s.name.toLowerCase() !== query
-                  ).slice(0, 5);
-                  const prevList = previousSuggestions.filter(s =>
-                    s.description.toLowerCase().includes(query) &&
-                    !motorList.some(m => m.name.toLowerCase() === s.description.toLowerCase())
-                  ).slice(0, 7);
-
-                  if (motorList.length === 0 && invList.length === 0 && prevList.length === 0) return null;
-
-                  return (
-                    <div className="absolute z-20 left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded-md shadow-2xl max-h-64 overflow-auto no-scrollbar divide-y divide-slate-800">
-                      {prevList.length > 0 && (
-                        <div>
-                          <div className="p-1.5 bg-blue-500/10 text-[10px] font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
-                            <History className="w-3 h-3 text-blue-400" /> Previous Entries & History
-                          </div>
-                          {prevList.map((s, si) => (
-                            <div
-                              key={`prev-${si}`}
-                              className="px-3 py-2 cursor-pointer hover:bg-blue-500/10 text-sm text-slate-200 transition-colors"
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                const newItems = [...data.items];
-                                newItems[index] = { 
-                                  ...newItems[index], 
-                                  name: s.description, 
-                                  hsn: s.hsn || newItems[index].hsn || '9987', 
-                                  price: s.rate !== undefined && s.rate > 0 ? s.rate : newItems[index].price, 
-                                  quantityUnit: s.unit || newItems[index].quantityUnit || 'NOS' 
-                                };
-                                onChange({ ...data, items: newItems });
-                                setActiveItemIdx(null);
-                              }}
-                            >
-                              <div className="font-semibold text-slate-100 flex items-center justify-between">
-                                <span>{s.description}</span>
-                                {s.rate !== undefined && s.rate > 0 && (
-                                  <span className="text-emerald-400 font-mono font-bold text-xs">
-                                    ₹{s.rate.toLocaleString('en-IN')}
-                                  </span>
-                                )}
-                              </div>
-                              <div className="text-[10px] text-slate-400 font-mono mt-0.5 flex gap-3">
-                                {s.source && <span>Source: <strong className="text-slate-300">{s.source}</strong></span>}
-                                {s.unit && <span>Unit: <strong className="text-slate-300">{s.unit}</strong></span>}
-                                {s.hsn && <span>HSN: <strong className="text-slate-300">{s.hsn}</strong></span>}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {motorList.length > 0 && (
-                        <div>
-                          <div className="p-1.5 bg-amber-500/5 text-[10px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
-                            <Sparkles className="w-3 h-3" /> Approved Motor Rates (Aurobindo / Apitoria / Eugia / APL)
-                          </div>
-                          {motorList.map((s, si) => (
-                            <div
-                              key={`motor-${si}`}
-                              className="px-3 py-2 cursor-pointer hover:bg-amber-500/10 text-sm text-slate-200 transition-colors"
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                const newItems = [...data.items];
-                                newItems[index] = { 
-                                  ...newItems[index], 
-                                  name: s.name, 
-                                  hsn: s.hsn || '9987', 
-                                  price: s.price, 
-                                  quantityUnit: s.quantityUnit || 'NOS' 
-                                };
-                                onChange({ ...data, items: newItems });
-                                setActiveItemIdx(null);
-                              }}
-                            >
-                              <div className="font-semibold text-slate-100 flex items-center justify-between">
-                                <span>{s.name}</span>
-                                <span className="text-amber-400 font-mono font-bold text-xs">₹{s.price.toLocaleString('en-IN')}</span>
-                              </div>
-                              <div className="text-[10px] text-slate-400 font-mono mt-0.5 flex gap-3">
-                                <span>HSN: <strong className="text-slate-300">{s.hsn}</strong></span>
-                                <span>Speed: <strong className="text-slate-300">{s.rpm}</strong></span>
-                                <span className="text-amber-300 font-semibold">(Editable Rate)</span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {invList.length > 0 && (
-                        <div>
-                          <div className="p-1.5 bg-emerald-500/5 text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
-                            Inventory Items
-                          </div>
-                          {invList.map((s, si) => (
-                            <div
-                              key={`inv-${si}`}
-                              className="px-3 py-2 cursor-pointer hover:bg-emerald-500/10 text-sm text-slate-200 transition-colors"
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                const newItems = [...data.items];
-                                newItems[index] = { 
-                                  ...newItems[index], 
-                                  name: s.name, 
-                                  hsn: s.hsn || '9987', 
-                                  price: s.price || 0, 
-                                  quantityUnit: s.quantityUnit || 'NOS' 
-                                };
-                                onChange({ ...data, items: newItems });
-                                setActiveItemIdx(null);
-                              }}
-                            >
-                              <div className="font-semibold text-slate-100">{s.name}</div>
-                              <div className="text-[10px] text-emerald-400 font-mono">₹{s.price} • HSN: {s.hsn || '9987'}</div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
+            {/* Full-width Description with Auto-suggestions */}
+            <div className="relative">
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-[10px] uppercase font-bold text-slate-400">Description / Particulars</label>
+                <span className="text-[10px] text-amber-400 font-medium">Type HP (e.g. 5 HP) for auto-rate</span>
               </div>
+              <input 
+                type="text" 
+                className="w-full bg-slate-900 border border-slate-700 rounded-md p-2 text-sm text-slate-100 placeholder:text-slate-600 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
+                placeholder="e.g. 5 HP Motor Rewinding / Bearing Replacement"
+                value={item.name} 
+                autoComplete="off"
+                onFocus={() => { setActiveItemIdx(index); setItemSearch(item.name); }}
+                onBlur={() => setTimeout(() => setActiveItemIdx(null), 200)}
+                onChange={e => {
+                  const val = e.target.value;
+                  setItemSearch(val);
+                  setActiveItemIdx(index);
+
+                  const motorMatch = findMotorPrice(val);
+                  if (motorMatch) {
+                    const newItems = [...data.items];
+                    newItems[index] = {
+                      ...newItems[index],
+                      name: val,
+                      price: motorMatch.price,
+                      hsn: newItems[index].hsn || motorMatch.hsn || '9987'
+                    };
+                    onChange({ ...data, items: newItems });
+                  } else {
+                    updateItem(index, 'name', val);
+                  }
+                }} 
+              />
+              {activeItemIdx === index && (() => {
+                const query = (itemSearch || '').trim().toLowerCase();
+                const motorList = getMotorSuggestions(itemSearch);
+                const invList = inventory.filter(s =>
+                  s.name.toLowerCase().includes(query) && s.name.toLowerCase() !== query
+                ).slice(0, 5);
+                const prevList = previousSuggestions.filter(s =>
+                  s.description.toLowerCase().includes(query) &&
+                  !motorList.some(m => m.name.toLowerCase() === s.description.toLowerCase())
+                ).slice(0, 7);
+
+                if (motorList.length === 0 && invList.length === 0 && prevList.length === 0) return null;
+
+                return (
+                  <div className="absolute z-20 left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded-md shadow-2xl max-h-64 overflow-auto no-scrollbar divide-y divide-slate-800">
+                    {prevList.length > 0 && (
+                      <div>
+                        <div className="p-1.5 bg-blue-500/10 text-[10px] font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
+                          <History className="w-3 h-3 text-blue-400" /> Previous Entries & History
+                        </div>
+                        {prevList.map((s, si) => (
+                          <div
+                            key={`prev-${si}`}
+                            className="px-3 py-2 cursor-pointer hover:bg-blue-500/10 text-sm text-slate-200 transition-colors"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              const newItems = [...data.items];
+                              newItems[index] = { 
+                                ...newItems[index], 
+                                name: s.description, 
+                                hsn: s.hsn || newItems[index].hsn || '9987', 
+                                price: s.rate !== undefined && s.rate > 0 ? s.rate : newItems[index].price, 
+                                quantityUnit: s.unit || newItems[index].quantityUnit || 'NOS' 
+                              };
+                              onChange({ ...data, items: newItems });
+                              setActiveItemIdx(null);
+                            }}
+                          >
+                            <div className="font-semibold text-slate-100 flex items-center justify-between">
+                              <span>{s.description}</span>
+                              {s.rate !== undefined && s.rate > 0 && (
+                                <span className="text-emerald-400 font-mono font-bold text-xs">
+                                  ₹{s.rate.toLocaleString('en-IN')}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-mono mt-0.5 flex gap-3">
+                              {s.source && <span>Source: <strong className="text-slate-300">{s.source}</strong></span>}
+                              {s.unit && <span>Unit: <strong className="text-slate-300">{s.unit}</strong></span>}
+                              {s.hsn && <span>HSN: <strong className="text-slate-300">{s.hsn}</strong></span>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {motorList.length > 0 && (
+                      <div>
+                        <div className="p-1.5 bg-amber-500/5 text-[10px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                          <Sparkles className="w-3 h-3" /> Approved Motor Rates (Aurobindo / Apitoria / Eugia / APL)
+                        </div>
+                        {motorList.map((s, si) => (
+                          <div
+                            key={`motor-${si}`}
+                            className="px-3 py-2 cursor-pointer hover:bg-amber-500/10 text-sm text-slate-200 transition-colors"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              const newItems = [...data.items];
+                              newItems[index] = { 
+                                ...newItems[index], 
+                                name: s.name, 
+                                hsn: s.hsn || '9987', 
+                                price: s.price, 
+                                quantityUnit: s.quantityUnit || 'NOS' 
+                              };
+                              onChange({ ...data, items: newItems });
+                              setActiveItemIdx(null);
+                            }}
+                          >
+                            <div className="font-semibold text-slate-100 flex items-center justify-between">
+                              <span>{s.name}</span>
+                              <span className="text-amber-400 font-mono font-bold text-xs">₹{s.price.toLocaleString('en-IN')}</span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-mono mt-0.5 flex gap-3">
+                              <span>HSN: <strong className="text-slate-300">{s.hsn}</strong></span>
+                              <span>Speed: <strong className="text-slate-300">{s.rpm}</strong></span>
+                              <span className="text-amber-300 font-semibold">(Editable Rate)</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {invList.length > 0 && (
+                      <div>
+                        <div className="p-1.5 bg-emerald-500/5 text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
+                          Inventory Items
+                        </div>
+                        {invList.map((s, si) => (
+                          <div
+                            key={`inv-${si}`}
+                            className="px-3 py-2 cursor-pointer hover:bg-emerald-500/10 text-sm text-slate-200 transition-colors"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              const newItems = [...data.items];
+                              newItems[index] = { 
+                                ...newItems[index], 
+                                name: s.name, 
+                                hsn: s.hsn || '9987', 
+                                price: s.price || 0, 
+                                quantityUnit: s.quantityUnit || 'NOS' 
+                              };
+                              onChange({ ...data, items: newItems });
+                              setActiveItemIdx(null);
+                            }}
+                          >
+                            <div className="font-semibold text-slate-100">{s.name}</div>
+                            <div className="text-[10px] text-emerald-400 font-mono">₹{s.price} • HSN: {s.hsn || '9987'}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Numerical details: HSN, Qty, Unit, Rate */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
               <div>
-                <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">HSN</label>
+                <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">HSN Code</label>
                 <input 
                   type="text" 
-                  className="w-full bg-slate-900 border border-slate-700 rounded p-1.5 text-sm"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-md p-1.5 text-sm text-slate-100"
+                  placeholder="e.g. 9987"
                   value={item.hsn} 
                   onChange={e => updateItem(index, 'hsn', e.target.value)} 
                 />
               </div>
-            </div>
 
-            <div className="grid grid-cols-4 gap-3">
-              <div className="col-span-1">
-                <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Qty</label>
+              <div>
+                <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Quantity</label>
                 <input 
                   type="number" 
-                  className="w-full bg-slate-900 border border-slate-700 rounded p-1.5 text-sm"
+                  min="1"
+                  step="any"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-md p-1.5 text-sm text-slate-100 font-semibold"
                   value={item.quantity} 
                   onChange={e => updateItem(index, 'quantity', Number(e.target.value))} 
                 />
               </div>
-              <div className="col-span-1">
-                <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Unit</label>
+
+              <div>
+                <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Unit</label>
                 <input 
                   type="text" 
-                  className="w-full bg-slate-900 border border-slate-700 rounded p-1.5 text-sm"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-md p-1.5 text-sm text-slate-100"
+                  placeholder="NOS / SET"
                   value={item.quantityUnit} 
                   onChange={e => updateItem(index, 'quantityUnit', e.target.value)} 
                 />
               </div>
-              <div className="col-span-2">
-                <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Rate (₹)</label>
+
+              <div>
+                <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Rate (₹)</label>
                 <input 
                   type="number" 
-                  className="w-full bg-slate-900 border border-slate-700 rounded p-1.5 text-sm"
+                  min="0"
+                  step="any"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-md p-1.5 text-sm font-semibold text-emerald-400 text-right"
                   value={item.price} 
                   onChange={e => updateItem(index, 'price', Number(e.target.value))} 
                 />
               </div>
             </div>
             
-             <div className="grid grid-cols-2 gap-3">
+            {/* Discount and Line Total */}
+            <div className="grid grid-cols-2 gap-3 items-center pt-1 border-t border-slate-800/60">
               <div>
-                <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Discount</label>
+                <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Discount (₹)</label>
                 <input 
                   type="number" 
-                  className="w-full bg-slate-900 border border-slate-700 rounded p-1.5 text-sm"
-                  value={item.discount} 
+                  min="0"
+                  step="any"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-md p-1.5 text-sm text-slate-100"
+                  placeholder="0"
+                  value={item.discount || ''} 
                   onChange={e => updateItem(index, 'discount', Number(e.target.value))} 
                 />
+              </div>
+              <div className="text-right pt-4">
+                <span className="text-[11px] font-bold text-slate-400">Total: </span>
+                <span className="text-sm font-bold text-slate-100 font-mono">
+                  ₹{Math.max(0, ((item.quantity || 1) * (item.price || 0)) - (item.discount || 0)).toLocaleString('en-IN')}
+                </span>
               </div>
             </div>
 

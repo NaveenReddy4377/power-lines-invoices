@@ -7,7 +7,7 @@ import CashBillPreview from '@/components/CashBillPreview';
 import LoadingOverlay from '@/components/LoadingOverlay';
 import FailureModal from '@/components/FailureModal';
 import { CashBillData, initialCashBillData } from '@/types';
-import { Printer, RefreshCcw, Save, Loader2, Download, FileSpreadsheet, ArrowLeft, CheckCircle2, FolderOpen, Receipt, Sparkles } from 'lucide-react';
+import { Printer, RefreshCcw, Save, Loader2, Download, FileSpreadsheet, ArrowLeft, CheckCircle2, FolderOpen, Receipt, Sparkles, Columns2, Edit3, Eye, ZoomIn, ZoomOut } from 'lucide-react';
 import { saveCashBillToSpreadsheet, getNextCashBillNumber, loadCashBill } from '@/app/actions';
 import * as XLSX from 'xlsx';
 import Link from 'next/link';
@@ -47,6 +47,9 @@ function CashBillContent() {
     details: ''
   });
 
+  const [viewMode, setViewMode] = useState<'split' | 'form' | 'preview'>('split');
+  const [previewZoom, setPreviewZoom] = useState<number>(0.85);
+
   const searchParams = useSearchParams();
   const editId = searchParams.get('edit');
   const router = useRouter();
@@ -54,6 +57,16 @@ function CashBillContent() {
 
   useEffect(() => {
     setMounted(true);
+    // Responsive viewMode detection for mobile and tablets
+    if (typeof window !== 'undefined') {
+      if (window.innerWidth < 640) {
+        setViewMode('form');
+        setPreviewZoom(0.48);
+      } else if (window.innerWidth < 1024) {
+        setViewMode('form');
+        setPreviewZoom(0.75);
+      }
+    }
     // Replace default item ID with real UUID
     setData((prev) => ({
       ...prev,
@@ -371,29 +384,66 @@ function CashBillContent() {
 
         {/* Action Controls */}
         <div className="flex items-center gap-2 sm:gap-3">
+          {/* View Mode Switcher - Responsive across Mobile, Tablet & Desktop */}
+          <div className="flex items-center bg-slate-900 border border-slate-800 rounded-lg p-0.5 shadow-inner">
+            <button
+              type="button"
+              onClick={() => { setViewMode('split'); setPreviewZoom(0.85); }}
+              className={`hidden md:flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                viewMode === 'split' ? 'bg-emerald-500 text-slate-950 shadow-sm' : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Split View (Form + Preview)"
+            >
+              <Columns2 className="w-3.5 h-3.5" />
+              <span>Split</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('form')}
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                viewMode === 'form' ? 'bg-emerald-500 text-slate-950 shadow-sm' : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Form Focus"
+            >
+              <Edit3 className="w-3.5 h-3.5" />
+              <span>Form</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setViewMode('preview'); setPreviewZoom(typeof window !== 'undefined' && window.innerWidth < 640 ? 0.48 : 1); }}
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                viewMode === 'preview' ? 'bg-emerald-500 text-slate-950 shadow-sm' : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Preview Focus"
+            >
+              <Eye className="w-3.5 h-3.5" />
+              <span>Preview</span>
+            </button>
+          </div>
+
           <button
             onClick={handlePromptLoad}
             title="Load Bill by Number"
-            className="hidden sm:flex items-center gap-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 text-xs font-semibold border border-slate-700 transition-colors cursor-pointer"
+            className="hidden sm:flex items-center gap-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1.5 text-xs font-semibold border border-slate-700 transition-colors cursor-pointer"
           >
             <FolderOpen className="w-3.5 h-3.5" />
-            <span>Load Bill</span>
+            <span className="hidden md:inline">Load Bill</span>
           </button>
 
           <button
             onClick={handleReset}
             title="Create New Bill"
-            className="hidden sm:flex items-center gap-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 text-xs font-semibold border border-slate-700 transition-colors cursor-pointer"
+            className="hidden sm:flex items-center gap-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1.5 text-xs font-semibold border border-slate-700 transition-colors cursor-pointer"
           >
             <RefreshCcw className="w-3.5 h-3.5" />
-            <span>New</span>
+            <span className="hidden md:inline">New</span>
           </button>
 
           <button
             onClick={handleDownloadExcel}
             disabled={isDownloadingExcel}
             title="Download Excel"
-            className="hidden sm:flex items-center gap-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 px-3 py-1.5 text-xs font-semibold border border-emerald-500/40 transition-colors cursor-pointer disabled:opacity-50"
+            className="hidden lg:flex items-center gap-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 px-2.5 py-1.5 text-xs font-semibold border border-emerald-500/40 transition-colors cursor-pointer disabled:opacity-50"
           >
             {isDownloadingExcel ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5" />}
             <span>Excel</span>
@@ -403,7 +453,7 @@ function CashBillContent() {
             onClick={handleDownloadPdf}
             disabled={isDownloadingPdf}
             title="Download PDF"
-            className="hidden sm:flex items-center gap-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 text-xs font-semibold border border-slate-700 transition-colors cursor-pointer disabled:opacity-50"
+            className="hidden lg:flex items-center gap-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1.5 text-xs font-semibold border border-slate-700 transition-colors cursor-pointer disabled:opacity-50"
           >
             {isDownloadingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
             <span>PDF</span>
@@ -445,21 +495,77 @@ function CashBillContent() {
       )}
 
       {/* Main Workspace: Form & Live A4 Preview */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden bg-slate-950">
         {/* Left: Input Form Panel */}
-        <div className="w-full lg:w-1/2 overflow-y-auto p-4 sm:p-6 border-r border-slate-800 print:hidden">
-          <CashBillForm
-            data={data}
-            onChange={setData}
-            onLoad={handleLoad}
-            isLoading={isLoading}
-          />
-        </div>
+        {viewMode !== 'preview' && (
+          <div className={`overflow-y-auto p-4 sm:p-6 border-r border-slate-800 print:hidden custom-scrollbar ${
+            viewMode === 'form' 
+              ? 'flex-1 w-full max-w-4xl mx-auto' 
+              : 'w-full md:w-[500px] lg:w-[550px] xl:w-[600px] flex-shrink-0'
+          }`}>
+            <CashBillForm
+              data={data}
+              onChange={setData}
+              onLoad={handleLoad}
+              isLoading={isLoading}
+            />
+          </div>
+        )}
 
         {/* Right: Live A4 Printable Preview */}
-        <div className="hidden lg:flex lg:w-1/2 overflow-y-auto p-6 bg-slate-900/50 justify-center items-start print:w-full print:p-0 print:m-0 print:bg-white print:overflow-visible">
-          <CashBillPreview data={data} />
-        </div>
+        {viewMode !== 'form' && (
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-950/80 flex flex-col items-center print:w-full print:p-0 print:m-0 print:bg-white print:overflow-visible custom-scrollbar">
+            {/* Zoom Controls Bar */}
+            <div className="mb-3 flex items-center justify-between w-full max-w-[210mm] px-2 print:hidden">
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="tracking-wide">Live A4 Printable Cash Bill</span>
+              </div>
+              <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg p-1 shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => setPreviewZoom(prev => Math.max(0.5, +(prev - 0.05).toFixed(2)))}
+                  className="p-1 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition-colors cursor-pointer"
+                  title="Zoom Out"
+                >
+                  <ZoomOut className="w-3.5 h-3.5" />
+                </button>
+                <span className="text-[11px] font-mono font-bold text-emerald-400 px-1.5 min-w-[42px] text-center">
+                  {Math.round(previewZoom * 100)}%
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPreviewZoom(prev => Math.min(1.4, +(prev + 0.05).toFixed(2)))}
+                  className="p-1 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition-colors cursor-pointer"
+                  title="Zoom In"
+                >
+                  <ZoomIn className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewZoom(viewMode === 'split' ? 0.85 : 1)}
+                  className="px-2 py-0.5 text-[10px] font-bold text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition-colors cursor-pointer border-l border-slate-800 ml-1"
+                  title="Reset Zoom"
+                >
+                  Fit
+                </button>
+              </div>
+            </div>
+
+            {/* Scaled Preview Wrapper with safe margins */}
+            <div className="w-full flex justify-center overflow-visible">
+              <div 
+                className="transition-transform duration-150 origin-top shadow-[0_20px_50px_rgba(0,0,0,0.6)] print:shadow-none print:transform-none"
+                style={{
+                  transform: `scale(${previewZoom})`,
+                  marginBottom: `${Math.max(0, (1 - previewZoom) * -297)}mm`
+                }}
+              >
+                <CashBillPreview data={data} />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Print only display on small screens */}

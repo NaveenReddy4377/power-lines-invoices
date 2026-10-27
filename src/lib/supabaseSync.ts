@@ -130,24 +130,79 @@ export async function fetchInvoicesFromSupabase(): Promise<any[] | null> {
       .order('created_at', { ascending: false });
 
     if (error || !data) return null;
-    return data.map((row) => ({
-      id: row.invoice_no,
-      date: row.invoice_date || '',
-      dueDate: row.raw_data?.dueDate || '',
-      customer: row.customer_name || '',
-      gstin: row.customer_gstin || '',
-      amount: Number(row.total_amount || 0),
-      sumTotal: row.raw_data?.items ? (row.raw_data.items.reduce((s: number, i: any) => s + (Number(i.quantity||0)*Number(i.price||0)), 0)) : Number(row.total_amount || 0),
-      cgst: Math.round(((Number(row.total_amount || 0) / 1.18) * 0.09) * 100) / 100,
-      sgst: Math.round(((Number(row.total_amount || 0) / 1.18) * 0.09) * 100) / 100,
-      status: row.status || 'Pending',
-      poNumber: row.raw_data?.poNumber || '',
-      poDate: row.raw_data?.poDate || '',
-      rawData: row.raw_data,
-    }));
+    return data.map((row) => {
+      const rawStatus = row.status || row.raw_data?.status || 'Pending';
+      const normalizedStatus = ['cleared', 'paid'].includes(String(rawStatus).trim().toLowerCase()) ? 'Cleared' : 'Pending';
+      return {
+        id: row.invoice_no,
+        date: row.invoice_date || '',
+        dueDate: row.raw_data?.dueDate || '',
+        customer: row.customer_name || '',
+        gstin: row.customer_gstin || '',
+        amount: Number(row.total_amount || 0),
+        sumTotal: row.raw_data?.items ? (row.raw_data.items.reduce((s: number, i: any) => s + (Number(i.quantity||0)*Number(i.price||0)), 0)) : Number(row.total_amount || 0),
+        cgst: Math.round(((Number(row.total_amount || 0) / 1.18) * 0.09) * 100) / 100,
+        sgst: Math.round(((Number(row.total_amount || 0) / 1.18) * 0.09) * 100) / 100,
+        status: normalizedStatus,
+        poNumber: row.raw_data?.poNumber || '',
+        poDate: row.raw_data?.poDate || '',
+        rawData: row.raw_data,
+      };
+    });
   } catch {
     return null;
   }
+}
+
+export async function updateInvoiceStatusInSupabase(invoiceNo: string, newStatus: string): Promise<boolean> {
+  if (!isSupabaseConfigured() || !supabase || !invoiceNo) return false;
+  try {
+    const cleanNo = invoiceNo.trim();
+    const normalized = ['cleared', 'paid'].includes(newStatus.trim().toLowerCase()) ? 'Cleared' : 'Pending';
+
+    // Fetch existing raw_data to keep raw_data.status synchronized
+    const { data } = await supabase
+      .from('invoices')
+      .select('raw_data')
+      .ilike('invoice_no', cleanNo)
+      .maybeSingle();
+
+    const rawData = data?.raw_data ? { ...data.raw_data, status: normalized } : undefined;
+
+    const payload: any = {
+      status: normalized,
+      updated_at: new Date().toISOString(),
+    };
+    if (rawData) {
+      payload.raw_data = rawData;
+    }
+
+    const { error } = await supabase
+      .from('invoices')
+      .update(payload)
+      .ilike('invoice_no', cleanNo);
+
+    if (error) {
+      console.warn('updateInvoiceStatusInSupabase error:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    console.warn('updateInvoiceStatusInSupabase exception:', err);
+    return false;
+  }
+}
+
+export async function batchUpdateInvoiceStatusesInSupabase(updates: { invoiceNo: string; status: string }[]): Promise<number> {
+  if (!isSupabaseConfigured() || !supabase || !updates.length) return 0;
+  let count = 0;
+  await Promise.allSettled(
+    updates.map(async (u) => {
+      const ok = await updateInvoiceStatusInSupabase(u.invoiceNo, u.status);
+      if (ok) count++;
+    })
+  );
+  return count;
 }
 
 export async function getLatestInvoiceNoFromSupabase(): Promise<string | null> {
@@ -458,23 +513,65 @@ export async function fetchQuotationsFromSupabase(): Promise<any[] | null> {
       .order('created_at', { ascending: false });
 
     if (error || !data) return null;
-    return data.map((row) => ({
-      id: row.quotation_no,
-      date: row.quotation_date || '',
-      validUntil: row.raw_data?.validUntil || '',
-      customer: row.client_name || '',
-      gstin: row.raw_data?.billTo?.gstin || '',
-      rgpNo: row.raw_data?.rgpNumber || '',
-      rgpDate: row.raw_data?.rgpDate || '',
-      amount: Number(row.total_amount || 0),
-      sumTotal: Math.round(((Number(row.total_amount || 0)) / 1.18) * 100) / 100,
-      cgst: Math.round(((Number(row.total_amount || 0) / 1.18) * 0.09) * 100) / 100,
-      sgst: Math.round(((Number(row.total_amount || 0) / 1.18) * 0.09) * 100) / 100,
-      status: row.raw_data?.status || 'Pending',
-      rawData: row.raw_data,
-    }));
+    return data.map((row) => {
+      const rawStatus = row.status || row.raw_data?.status || 'Pending';
+      const normalizedStatus = ['cleared', 'paid'].includes(String(rawStatus).trim().toLowerCase()) ? 'Cleared' : 'Pending';
+      return {
+        id: row.quotation_no,
+        date: row.quotation_date || '',
+        validUntil: row.raw_data?.validUntil || '',
+        customer: row.client_name || '',
+        gstin: row.raw_data?.billTo?.gstin || '',
+        rgpNo: row.raw_data?.rgpNumber || '',
+        rgpDate: row.raw_data?.rgpDate || '',
+        amount: Number(row.total_amount || 0),
+        sumTotal: Math.round(((Number(row.total_amount || 0)) / 1.18) * 100) / 100,
+        cgst: Math.round(((Number(row.total_amount || 0) / 1.18) * 0.09) * 100) / 100,
+        sgst: Math.round(((Number(row.total_amount || 0) / 1.18) * 0.09) * 100) / 100,
+        status: normalizedStatus,
+        rawData: row.raw_data,
+      };
+    });
   } catch {
     return null;
+  }
+}
+
+export async function updateQuotationStatusInSupabase(quotationNo: string, newStatus: string): Promise<boolean> {
+  if (!isSupabaseConfigured() || !supabase || !quotationNo) return false;
+  try {
+    const cleanNo = quotationNo.trim();
+    const normalized = ['cleared', 'paid'].includes(newStatus.trim().toLowerCase()) ? 'Cleared' : 'Pending';
+
+    const { data } = await supabase
+      .from('quotations')
+      .select('raw_data')
+      .ilike('quotation_no', cleanNo)
+      .maybeSingle();
+
+    const rawData = data?.raw_data ? { ...data.raw_data, status: normalized } : undefined;
+
+    const payload: any = {
+      status: normalized,
+      updated_at: new Date().toISOString(),
+    };
+    if (rawData) {
+      payload.raw_data = rawData;
+    }
+
+    const { error } = await supabase
+      .from('quotations')
+      .update(payload)
+      .ilike('quotation_no', cleanNo);
+
+    if (error) {
+      console.warn('updateQuotationStatusInSupabase error:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    console.warn('updateQuotationStatusInSupabase exception:', err);
+    return false;
   }
 }
 

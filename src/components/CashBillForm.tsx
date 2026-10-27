@@ -139,9 +139,9 @@ export default function CashBillForm({ data, onChange, onLoad, isLoading }: Prop
           <FileText className="w-4 h-4" /> Bill & Payment Details
         </h4>
 
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           {/* Bill No with Load Button */}
-          <div className="sm:col-span-2">
+          <div>
             <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
               Bill Number
             </label>
@@ -162,7 +162,7 @@ export default function CashBillForm({ data, onChange, onLoad, isLoading }: Prop
                   onClick={() => onLoad(loadBillInput)}
                   disabled={isLoading}
                   title="Load Bill by Number"
-                  className="px-3 py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer"
+                  className="px-3.5 py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer"
                 >
                   Load
                 </button>
@@ -199,10 +199,8 @@ export default function CashBillForm({ data, onChange, onLoad, isLoading }: Prop
               <option value="Cheque">📜 Cheque</option>
             </select>
           </div>
-        </div>
 
-        {/* Payment Status, Vehicle No, & Transaction Ref */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+          {/* Payment Status */}
           <div>
             <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
               Payment Status
@@ -232,7 +230,10 @@ export default function CashBillForm({ data, onChange, onLoad, isLoading }: Prop
               </button>
             </div>
           </div>
+        </div>
 
+        {/* Vehicle No, Transaction Ref & Motor details */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-3 border-t border-slate-800/80">
           <div>
             <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
               Vehicle / Transport No (Optional)
@@ -246,7 +247,7 @@ export default function CashBillForm({ data, onChange, onLoad, isLoading }: Prop
             />
           </div>
 
-          {data.paymentMode !== 'Cash' && (
+          {data.paymentMode !== 'Cash' ? (
             <div>
               <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
                 Transaction / UTR / Cheque No.
@@ -259,9 +260,11 @@ export default function CashBillForm({ data, onChange, onLoad, isLoading }: Prop
                 className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs font-mono text-slate-200 focus:outline-hidden focus:border-amber-500"
               />
             </div>
+          ) : (
+            <div className="hidden sm:block" />
           )}
 
-          <div className={data.paymentMode === 'Cash' ? 'sm:col-span-2' : ''}>
+          <div className="sm:col-span-2">
             <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
               Motor / Job Specification (Optional)
             </label>
@@ -402,99 +405,105 @@ export default function CashBillForm({ data, onChange, onLoad, isLoading }: Prop
                 )}
               </div>
 
-              <div className="grid grid-cols-12 gap-2">
-                {/* Description with Auto-Suggestions */}
-                <div className="col-span-12 sm:col-span-6 relative">
-                  <input
-                    type="text"
-                    value={item.description}
-                    onChange={(e) => {
-                      handleItemChange(idx, 'description', e.target.value);
-                      setDescSearch(e.target.value);
-                      setActiveDescIdx(idx);
-                    }}
-                    onFocus={() => {
-                      setActiveDescIdx(idx);
-                      setDescSearch(item.description || '');
-                    }}
-                    placeholder="Description (e.g. 5 HP Motor Rewinding / Bearing replacement)"
-                    className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-100 placeholder-slate-600 focus:outline-hidden focus:border-amber-500"
-                  />
+              {/* Description with Auto-Suggestions */}
+              <div className="relative">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                  Description / Particulars
+                </label>
+                <input
+                  type="text"
+                  value={item.description}
+                  onChange={(e) => {
+                    handleItemChange(idx, 'description', e.target.value);
+                    setDescSearch(e.target.value);
+                    setActiveDescIdx(idx);
+                  }}
+                  onFocus={() => {
+                    setActiveDescIdx(idx);
+                    setDescSearch(item.description || '');
+                  }}
+                  placeholder="Description (e.g. 5 HP Motor Rewinding / Bearing replacement)"
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-100 placeholder-slate-600 focus:outline-hidden focus:border-amber-500"
+                />
 
-                  {/* Previous Entries Auto-Suggestions Dropdown */}
-                  {activeDescIdx === idx && (() => {
-                    const query = (descSearch || '').trim().toLowerCase();
-                    const filtered = suggestions.filter(s =>
-                      s.description.toLowerCase().includes(query)
-                    ).slice(0, 7);
+                {/* Previous Entries Auto-Suggestions Dropdown */}
+                {activeDescIdx === idx && (() => {
+                  const query = (descSearch || '').trim().toLowerCase();
+                  const filtered = suggestions.filter(s =>
+                    s.description.toLowerCase().includes(query)
+                  ).slice(0, 7);
 
-                    if (filtered.length === 0) return null;
+                  if (filtered.length === 0) return null;
 
-                    return (
-                      <div
-                        ref={descDropdownRef}
-                        className="absolute z-30 left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden divide-y divide-slate-800/80 animate-in fade-in zoom-in-95 duration-100"
-                      >
-                        <div className="p-1.5 bg-slate-950/70 text-[10px] font-bold text-amber-400 uppercase tracking-wider flex items-center justify-between">
-                          <span className="flex items-center gap-1.5">
-                            <History className="w-3 h-3 text-amber-500" />
-                            Previous Entries & Suggestions
-                          </span>
-                          <button
-                            type="button"
-                            onMouseDown={() => setActiveDescIdx(null)}
-                            className="text-slate-400 hover:text-slate-200 text-xs px-1"
-                          >
-                            ✕
-                          </button>
-                        </div>
-
-                        <div className="max-h-52 overflow-y-auto">
-                          {filtered.map((s, si) => (
-                            <div
-                              key={`sug-${si}`}
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                selectSuggestion(idx, s);
-                              }}
-                              className="px-3 py-2 cursor-pointer hover:bg-amber-500/10 transition-colors flex items-center justify-between text-xs group"
-                            >
-                              <div className="flex-1 pr-2">
-                                <p className="font-semibold text-slate-100 group-hover:text-amber-300 transition-colors">
-                                  {s.description}
-                                </p>
-                                <div className="flex items-center gap-2 mt-0.5">
-                                  {s.source && (
-                                    <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-xs bg-slate-800 text-slate-400 border border-slate-700">
-                                      {s.source}
-                                    </span>
-                                  )}
-                                  {s.unit && (
-                                    <span className="text-[10px] text-slate-500">
-                                      Unit: <strong className="text-slate-400">{s.unit}</strong>
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-
-                              {s.rate !== undefined && s.rate > 0 && (
-                                <div className="text-right shrink-0">
-                                  <span className="text-xs font-bold text-emerald-400 font-mono">
-                                    ₹{s.rate.toLocaleString('en-IN')}
-                                  </span>
-                                  <span className="block text-[9px] text-slate-500 font-medium">Auto-fill Rate</span>
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
+                  return (
+                    <div
+                      ref={descDropdownRef}
+                      className="absolute z-30 left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden divide-y divide-slate-800/80 animate-in fade-in zoom-in-95 duration-100"
+                    >
+                      <div className="p-1.5 bg-slate-950/70 text-[10px] font-bold text-amber-400 uppercase tracking-wider flex items-center justify-between">
+                        <span className="flex items-center gap-1.5">
+                          <History className="w-3 h-3 text-amber-500" />
+                          Previous Entries & Suggestions
+                        </span>
+                        <button
+                          type="button"
+                          onMouseDown={() => setActiveDescIdx(null)}
+                          className="text-slate-400 hover:text-slate-200 text-xs px-1"
+                        >
+                          ✕
+                        </button>
                       </div>
-                    );
-                  })()}
-                </div>
 
-                {/* Qty */}
-                <div className="col-span-4 sm:col-span-2">
+                      <div className="max-h-52 overflow-y-auto">
+                        {filtered.map((s, si) => (
+                          <div
+                            key={`sug-${si}`}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              selectSuggestion(idx, s);
+                            }}
+                            className="px-3 py-2 cursor-pointer hover:bg-amber-500/10 transition-colors flex items-center justify-between text-xs group"
+                          >
+                            <div className="flex-1 pr-2">
+                              <p className="font-semibold text-slate-100 group-hover:text-amber-300 transition-colors">
+                                {s.description}
+                              </p>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                {s.source && (
+                                  <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-xs bg-slate-800 text-slate-400 border border-slate-700">
+                                    {s.source}
+                                  </span>
+                                )}
+                                {s.unit && (
+                                  <span className="text-[10px] text-slate-500">
+                                    Unit: <strong className="text-slate-400">{s.unit}</strong>
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {s.rate !== undefined && s.rate > 0 && (
+                              <div className="text-right shrink-0">
+                                <span className="text-xs font-bold text-emerald-400 font-mono">
+                                  ₹{s.rate.toLocaleString('en-IN')}
+                                </span>
+                                <span className="block text-[9px] text-slate-500 font-medium">Auto-fill Rate</span>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Qty, Unit, and Rate */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                    Quantity
+                  </label>
                   <input
                     type="number"
                     min="1"
@@ -506,8 +515,10 @@ export default function CashBillForm({ data, onChange, onLoad, isLoading }: Prop
                   />
                 </div>
 
-                {/* Unit */}
-                <div className="col-span-4 sm:col-span-2">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                    Unit (UOM)
+                  </label>
                   <select
                     value={item.unit}
                     onChange={(e) => handleItemChange(idx, 'unit', e.target.value)}
@@ -523,8 +534,10 @@ export default function CashBillForm({ data, onChange, onLoad, isLoading }: Prop
                   </select>
                 </div>
 
-                {/* Rate */}
-                <div className="col-span-4 sm:col-span-2">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                    Rate (₹)
+                  </label>
                   <input
                     type="number"
                     min="0"

@@ -26,11 +26,12 @@ import {
   Download,
   Sparkles,
   ArrowUpDown,
-  Receipt
+  Receipt,
+  RefreshCw
 } from 'lucide-react';
 import Link from 'next/link';
 import * as XLSX from 'xlsx';
-import { updateRecordStatus, loadInvoice, loadQuotation, loadDeliveryChallan, loadCashBill } from '@/app/actions';
+import { updateRecordStatus, syncInvoiceStatusesFromGoogleSheets, loadInvoice, loadQuotation, loadDeliveryChallan, loadCashBill } from '@/app/actions';
 import InvoicePreview from '@/components/InvoicePreview';
 import QuotationPreview from '@/components/QuotationPreview';
 import DeliveryChallanPreview from '@/components/DeliveryChallanPreview';
@@ -78,8 +79,14 @@ export interface CashBillRecord {
   rawData?: any;
 }
 
+export function isStatusCleared(status?: string): boolean {
+  if (!status) return false;
+  const s = status.trim().toLowerCase();
+  return s === 'cleared' || s === 'paid' || s === 'cleared / paid';
+}
+
 function isOverdue(r: any) {
-  if (r.status !== 'Pending' || !r.dueDate) return false;
+  if (isStatusCleared(r.status) || !r.dueDate) return false;
   const due = new Date(r.dueDate);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -96,7 +103,17 @@ interface DashboardManagerProps {
 export default function DashboardManager({ invoices, quotations, deliveryChallans = [], cashBills = [] }: DashboardManagerProps) {
   const [invoicesState, setInvoicesState] = useState<Record[]>(invoices);
   const [quotationsState, setQuotationsState] = useState<Record[]>(quotations);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncToast, setSyncToast] = useState<string | null>(null);
   const [viewAllType, setViewAllType] = useState<'invoices' | 'quotations' | 'deliveryChallans' | null>(null);
+
+  useEffect(() => {
+    setInvoicesState(invoices);
+  }, [invoices]);
+
+  useEffect(() => {
+    setQuotationsState(quotations);
+  }, [quotations]);
   
   // Filtering states for Invoices & Quotations
   const [searchQuery, setSearchQuery] = useState('');
@@ -157,7 +174,11 @@ export default function DashboardManager({ invoices, quotations, deliveryChallan
     }
 
     if (statusF !== 'all') {
-      filtered = filtered.filter(r => r.status === statusF);
+      filtered = filtered.filter(r => {
+        if (statusF === 'Cleared') return isStatusCleared(r.status);
+        if (statusF === 'Pending') return !isStatusCleared(r.status);
+        return true;
+      });
     }
 
     if (dateF === 'overdue') {
@@ -527,13 +548,14 @@ export default function DashboardManager({ invoices, quotations, deliveryChallan
   const accentColor = viewAllType === 'invoices' ? 'blue' : viewAllType === 'quotations' ? 'purple' : 'amber';
 
   const handleToggleStatus = async (type: 'invoices' | 'quotations', id: string, currentStatus: string) => {
-    const newStatus = currentStatus === 'Pending' ? 'Cleared' : 'Pending';
+    const isCurrentlyCleared = isStatusCleared(currentStatus);
+    const newStatus: 'Cleared' | 'Pending' = isCurrentlyCleared ? 'Pending' : 'Cleared';
     
     // Optimistic update
     if (type === 'invoices') {
-      setInvoicesState(prev => prev.map(r => r.id === id ? { ...r, status: newStatus as any } : r));
+      setInvoicesState(prev => prev.map(r => r.id === id ? { ...r, status: newStatus } : r));
     } else {
-      setQuotationsState(prev => prev.map(r => r.id === id ? { ...r, status: newStatus as any } : r));
+      setQuotationsState(prev => prev.map(r => r.id === id ? { ...r, status: newStatus } : r));
     }
 
     try {
@@ -549,6 +571,24 @@ export default function DashboardManager({ invoices, quotations, deliveryChallan
       }
     } catch (err: any) {
       alert('Error: ' + err.message);
+    }
+  };
+
+  const handleSyncGoogleSheets = async () => {
+    setIsSyncing(true);
+    try {
+      const res = await syncInvoiceStatusesFromGoogleSheets();
+      if (res.success) {
+        setSyncToast(res.message || 'Synced successfully with Google Sheets!');
+        setTimeout(() => setSyncToast(null), 4000);
+        window.location.reload();
+      } else {
+        alert('Sync notice: ' + (res.error || 'Could not sync with Google Sheets'));
+      }
+    } catch (e: any) {
+      alert('Sync error: ' + e.message);
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -851,6 +891,16 @@ export default function DashboardManager({ invoices, quotations, deliveryChallan
           </button>
 
           <button
+            onClick={handleSyncGoogleSheets}
+            disabled={isSyncing}
+            className="text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-300 rounded-lg px-3 py-2 transition shadow-sm flex items-center gap-1.5 shrink-0 cursor-pointer disabled:opacity-50"
+            title="Sync all statuses and latest changes from Google Sheets"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-amber-600' : 'text-slate-500'}`} />
+            <span>{isSyncing ? 'Syncing...' : 'Sync Sheet'}</span>
+          </button>
+
+          <button
             onClick={() => setShowExportModal(true)}
             className="text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg px-3.5 py-2 transition shadow-sm flex items-center gap-1.5 shrink-0"
           >
@@ -859,6 +909,13 @@ export default function DashboardManager({ invoices, quotations, deliveryChallan
           </button>
         </div>
       </div>
+
+      {syncToast && (
+        <div className="fixed bottom-6 right-6 z-[400] bg-slate-900 text-white px-4 py-3 rounded-xl shadow-xl flex items-center gap-2 border border-slate-700 animate-in fade-in slide-in-from-bottom-2 text-xs font-bold">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+          <span>{syncToast}</span>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Invoice Summary List */}
@@ -1210,6 +1267,18 @@ export default function DashboardManager({ invoices, quotations, deliveryChallan
               </div>
 
               <div className="flex items-center gap-2">
+                {viewAllType === 'invoices' && (
+                  <button
+                    onClick={handleSyncGoogleSheets}
+                    disabled={isSyncing}
+                    className="text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-300 rounded-xl px-3.5 py-2 transition shadow-sm flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                    title="Pull latest status changes directly from Google Sheets"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-amber-600' : 'text-slate-500'}`} />
+                    <span>{isSyncing ? 'Syncing...' : 'Sync Sheet'}</span>
+                  </button>
+                )}
+
                 {/* Export Button inside Modal Header */}
                 {viewAllType === 'invoices' && (
                   <button
@@ -2006,9 +2075,9 @@ function RecordList({ title, icon, records, type, onViewAll, onExportExcel, onTo
                 <button 
                   onClick={() => onToggleStatus(r.id, r.status)}
                   className="transition-transform active:scale-95"
-                  title={`Mark as ${r.status === 'Pending' ? 'Cleared' : 'Pending'}`}
+                  title={`Mark as ${isStatusCleared(r.status) ? 'Pending' : 'Cleared'}`}
                 >
-                  {r.status === 'Cleared' ? (
+                  {isStatusCleared(r.status) ? (
                     <CheckCircle2 className="w-4 h-4 text-emerald-500 fill-emerald-50" />
                   ) : isOverdue(r) ? (
                     <div className="relative">
@@ -2067,7 +2136,7 @@ function FilterButton({ active, onClick, label }: { active: boolean, onClick: ()
 }
 
 function StatusBadge({ status, onClick, overdue }: { status: string, onClick: () => void, overdue?: boolean }) {
-  const isCleared = status === 'Cleared';
+  const isCleared = isStatusCleared(status);
   return (
     <button
       onClick={onClick}

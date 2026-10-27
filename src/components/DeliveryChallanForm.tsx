@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { DeliveryChallanData, DeliveryChallanItem, Client } from '@/types';
 import { extractDCFromImage, extractDCFromUrl, getClients, uploadRGPPhoto, getPreviousDescriptions, DescriptionSuggestion } from '@/app/actions';
-import { Upload, Sparkles, Plus, Trash2, Building, Truck, FileText, Loader2, CheckCircle2, AlertCircle, Image as ImageIcon, ExternalLink, History } from 'lucide-react';
+import { Upload, Sparkles, Plus, Trash2, Building, Truck, FileText, Loader2, CheckCircle2, AlertCircle, Image as ImageIcon, ExternalLink, History, Copy } from 'lucide-react';
 
 interface DeliveryChallanFormProps {
   data: DeliveryChallanData;
@@ -99,13 +99,24 @@ export default function DeliveryChallanForm({ data, onChange, onLoad, isLoading 
   const [extractedItemsCount, setExtractedItemsCount] = useState<number | null>(null);
 
   const applyExtractedData = (ext: any, photoUrl?: string) => {
-    let finalCustomerName = ext.customerName || data.customerName;
-    let finalCustomerAddress = ext.customerAddress || data.customerAddress;
-    let finalCustomerGstin = ext.customerGstin || data.customerGstin;
+    let rawCustomerName = (ext.customerName || '').trim();
+    let rawCustomerAddress = ext.customerAddress || '';
+    let rawCustomerGstin = ext.customerGstin || '';
+
+    // Guard: Power Lines Electrical Works is our own shop, NEVER the client!
+    if (/power\s*lines/i.test(rawCustomerName)) {
+      rawCustomerName = '';
+      rawCustomerAddress = '';
+      rawCustomerGstin = '';
+    }
+
+    let finalCustomerName = rawCustomerName || (data.customerName && !/power\s*lines/i.test(data.customerName) ? data.customerName : '');
+    let finalCustomerAddress = rawCustomerAddress || (data.customerAddress && !/bollaram.*jinnaram.*502\s*325/i.test(data.customerAddress) ? data.customerAddress : '');
+    let finalCustomerGstin = rawCustomerGstin || data.customerGstin;
 
     // Cross-match with CRM database if possible
-    if (ext.customerName && clients.length > 0) {
-      const extLower = ext.customerName.toLowerCase().trim();
+    if (rawCustomerName && clients.length > 0) {
+      const extLower = rawCustomerName.toLowerCase().trim();
       const matched = clients.find(c => 
         c.name.toLowerCase().includes(extLower) || extLower.includes(c.name.toLowerCase())
       );
@@ -113,6 +124,28 @@ export default function DeliveryChallanForm({ data, onChange, onLoad, isLoading 
         finalCustomerName = matched.name;
         if (matched.address) finalCustomerAddress = matched.address;
         if (matched.gstin) finalCustomerGstin = matched.gstin;
+      }
+    } else if (!finalCustomerName && clients.length > 0) {
+      // If customerName is empty or was rejected, check if OCR remarks, items or GSTIN match a client
+      const fullSearchText = [ext.remarks, ext.poNo, ext.vehicleNo, ...(Array.isArray(ext.items) ? ext.items.map((i: any) => i.description) : [])]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      
+      const foundClient = clients.find(c => {
+        const cLower = c.name.toLowerCase();
+        if (cLower.includes('apitoria') && fullSearchText.includes('apitoria')) return true;
+        if (cLower.includes('aurobindo') && fullSearchText.includes('aurobindo')) return true;
+        if (cLower.includes('peptides') && (fullSearchText.includes('peptide') || fullSearchText.includes('auro peptide'))) return true;
+        if (cLower.includes('eugia') && fullSearchText.includes('eugia')) return true;
+        if (cLower.includes('apl health') && fullSearchText.includes('apl')) return true;
+        return false;
+      });
+
+      if (foundClient) {
+        finalCustomerName = foundClient.name;
+        if (foundClient.address) finalCustomerAddress = foundClient.address;
+        if (foundClient.gstin) finalCustomerGstin = foundClient.gstin;
       }
     }
 
@@ -133,9 +166,9 @@ export default function DeliveryChallanForm({ data, onChange, onLoad, isLoading 
 
     onChange({
       ...data,
-      customerName: finalCustomerName || data.customerName,
-      customerAddress: finalCustomerAddress || data.customerAddress,
-      customerGstin: finalCustomerGstin || data.customerGstin,
+      customerName: finalCustomerName,
+      customerAddress: finalCustomerAddress,
+      customerGstin: finalCustomerGstin,
       rgpNo: ext.rgpNo || data.rgpNo,
       rgpDate: ext.rgpDate || data.rgpDate,
       vehicleNo: ext.vehicleNo || data.vehicleNo,
@@ -322,6 +355,78 @@ export default function DeliveryChallanForm({ data, onChange, onLoad, isLoading 
           )}
         </label>
 
+        {/* Visual Document Preview Card (Stored in Database & Sheet) */}
+        {data.rgpPhotoUrl && (
+          <div className="p-3 bg-slate-950/90 border border-slate-800 rounded-xl flex flex-col sm:flex-row items-center gap-3.5 shadow-inner animate-in fade-in slide-in-from-top-1">
+            {/* Thumbnail or Document Icon */}
+            <div className="relative group shrink-0 w-24 h-24 rounded-lg overflow-hidden border border-slate-700 bg-slate-900 flex items-center justify-center">
+              {data.rgpPhotoUrl.toLowerCase().includes('.pdf') ? (
+                <div className="flex flex-col items-center justify-center text-red-400 p-2 text-center">
+                  <FileText className="w-8 h-8 mb-1" />
+                  <span className="text-[9px] font-bold uppercase tracking-wider">PDF DOC</span>
+                </div>
+              ) : (
+                <img
+                  src={data.rgpPhotoUrl}
+                  alt="Stored RGP / Gate Pass"
+                  className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                  onError={(e) => {
+                    (e.target as HTMLElement).style.display = 'none';
+                  }}
+                />
+              )}
+              <a
+                href={data.rgpPhotoUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity text-xs font-bold gap-1"
+                title="Click to view full document in new tab"
+              >
+                <ExternalLink className="w-4 h-4" />
+              </a>
+            </div>
+
+            {/* Metadata & Actions */}
+            <div className="flex-1 min-w-0 text-center sm:text-left space-y-1">
+              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Stored in Database & Sheet
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono truncate max-w-[200px]" title={data.rgpPhotoUrl}>
+                  {data.rgpPhotoUrl.split('/').pop()?.split('?')[0] || 'rgp_document'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-300">
+                This document is safely stored in Supabase database storage and recorded in Google Sheets for permanent reference.
+              </p>
+              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
+                <a
+                  href={data.rgpPhotoUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-md text-[11px] font-bold transition-colors cursor-pointer"
+                >
+                  <ExternalLink className="w-3 h-3" /> View Full Document
+                </a>
+                <button
+                  type="button"
+                  onClick={() => handleCopyUrl(data.rgpPhotoUrl!)}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-md text-[11px] font-medium transition-colors cursor-pointer"
+                >
+                  <Copy className="w-3 h-3" /> {copiedUrl ? 'Copied Link!' : 'Copy Link'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleFieldChange('rgpPhotoUrl', '')}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded-md text-[11px] font-medium transition-colors cursor-pointer"
+                >
+                  <Trash2 className="w-3 h-3" /> Clear
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Permanent URL Field with AI Re-scan Button */}
         <div className="space-y-1.5 pt-1">
           <div className="flex items-center justify-between">
@@ -334,7 +439,7 @@ export default function DeliveryChallanForm({ data, onChange, onLoad, isLoading 
           <div className="flex gap-2">
             <input
               type="text"
-              placeholder="e.g. https://drive.google.com/... or /uploads/rgp/..."
+              placeholder="e.g. https://...supabase.co/storage/v1/object/public/rgp-uploads/..."
               value={data.rgpPhotoUrl || ''}
               onChange={(e) => handleFieldChange('rgpPhotoUrl', e.target.value)}
               className="flex-1 px-3 py-2 bg-slate-950 border border-slate-700 focus:border-amber-500 rounded-lg text-xs font-mono text-amber-300 placeholder:text-slate-500 focus:outline-none"
@@ -387,9 +492,9 @@ export default function DeliveryChallanForm({ data, onChange, onLoad, isLoading 
           <div className="flex items-center gap-2.5 text-xs font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 p-3 rounded-lg animate-in fade-in slide-in-from-top-1">
             <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
             <div>
-              <span className="font-bold text-emerald-300">Document Processed by AI!</span>
+              <span className="font-bold text-emerald-300">Document Processed by AI & Stored!</span>
               <p className="text-[11px] text-emerald-400/90 mt-0.5">
-                Successfully extracted party details, RGP reference, vehicle number
+                Successfully stored in database and extracted party details, RGP reference, vehicle number
                 {extractedItemsCount ? ` and ${extractedItemsCount} material items` : ''}. Review and adjust details below.
               </p>
             </div>
@@ -410,7 +515,7 @@ export default function DeliveryChallanForm({ data, onChange, onLoad, isLoading 
         {uploadSuccess && !extractSuccess && (
           <div className="flex items-center gap-2 text-xs font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 p-2.5 rounded-lg">
             <CheckCircle2 className="w-4 h-4 shrink-0" />
-            <span>RGP photo uploaded successfully! URL stored and ready to sync with Google Sheet.</span>
+            <span>✓ RGP photo uploaded to Supabase Storage & Google Sheet log for future reference!</span>
           </div>
         )}
 
@@ -428,18 +533,18 @@ export default function DeliveryChallanForm({ data, onChange, onLoad, isLoading 
           <FileText className="w-4 h-4" /> Delivery Challan Info
         </h4>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           <div>
-            <label className="text-[11px] font-bold text-slate-400 uppercase">DC Number</label>
-            <div className="flex gap-1.5 mt-1 relative">
+            <label className="text-[11px] font-bold text-slate-300 uppercase block mb-1">DC Number</label>
+            <div className="flex gap-2">
               <div className="relative flex-1 min-w-0">
                 <input
                   type="text"
                   value={data.dcNo}
                   disabled={isLoading}
-                  placeholder={isLoading ? "Loading DC No..." : "e.g. PLEW-DC-00001"}
+                  placeholder={isLoading ? "Loading..." : "e.g. PLEW-DC-00001"}
                   onChange={(e) => handleFieldChange('dcNo', e.target.value)}
-                  className="w-full px-3 py-2 pr-8 bg-slate-950 border border-slate-800 rounded-lg text-xs font-bold text-amber-400 focus:outline-none focus:border-amber-500 disabled:opacity-60"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs font-bold text-amber-400 focus:outline-none focus:border-amber-500 disabled:opacity-60"
                 />
                 {isLoading && (
                   <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
@@ -452,7 +557,7 @@ export default function DeliveryChallanForm({ data, onChange, onLoad, isLoading 
                 onClick={() => onLoad && onLoad(data.dcNo)}
                 disabled={isLoading}
                 title="Load existing Delivery Challan from Google Sheets"
-                className="px-3 py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer shadow-md active:scale-95 flex items-center gap-1.5"
+                className="px-3.5 py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer shadow-md active:scale-95 flex items-center gap-1.5"
               >
                 {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
                 <span>{isLoading ? 'Loading...' : 'Load'}</span>
@@ -461,36 +566,43 @@ export default function DeliveryChallanForm({ data, onChange, onLoad, isLoading 
           </div>
 
           <div>
-            <label className="text-[11px] font-bold text-slate-400 uppercase">DC Date</label>
+            <label className="text-[11px] font-bold text-slate-300 uppercase block mb-1">DC Date</label>
             <input
               type="date"
               value={data.dcDate}
               onChange={(e) => handleFieldChange('dcDate', e.target.value)}
-              className="w-full mt-1 px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs font-semibold text-slate-200 focus:outline-none focus:border-amber-500"
+              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs font-semibold text-slate-200 focus:outline-none focus:border-amber-500 cursor-pointer"
             />
           </div>
 
-          <div>
-            <label className="text-[11px] font-bold text-slate-400 uppercase">Challan Type</label>
+          <div className="sm:col-span-2">
+            <label className="text-[11px] font-bold text-slate-300 uppercase block mb-1">Challan Type</label>
             <select
               value={data.challanType}
               onChange={(e) => handleFieldChange('challanType', e.target.value)}
-              className="w-full mt-1 px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs font-semibold text-slate-200 focus:outline-none focus:border-amber-500"
+              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs font-semibold text-slate-200 focus:outline-none focus:border-amber-500"
             >
-              <option value="Returnable">Returnable Gate Pass</option>
-              <option value="Non-Returnable">Non-Returnable</option>
-              <option value="Regular">Regular DC</option>
+              <option value="Returnable">Returnable Gate Pass (Returnable DC)</option>
+              <option value="Non-Returnable">Non-Returnable Gate Pass</option>
+              <option value="Regular">Regular Delivery Challan</option>
             </select>
           </div>
         </div>
+      </div>
+
+      {/* Customer Information Card */}
+      <div className="space-y-3.5 bg-slate-900/70 p-4 sm:p-5 rounded-2xl border border-slate-800 shadow-sm">
+        <h4 className="text-xs font-bold text-amber-500 uppercase tracking-widest flex items-center gap-2">
+          <Building className="w-4 h-4 text-amber-400" /> Customer / Party (M/s)
+        </h4>
 
         {/* Customer Details */}
-        <div className="relative pt-2">
+        <div className="relative">
           <div className="flex justify-between items-center mb-1">
-            <label className="text-[11px] font-bold text-slate-400 uppercase flex items-center gap-1.5">
-              <Building className="w-3.5 h-3.5 text-amber-400" /> Customer / Party (M/s)
+            <label className="text-[11px] font-bold text-slate-300 uppercase">
+              Company / Client Name
             </label>
-            <span className="text-[10px] text-slate-500">Auto-filled or select from CRM</span>
+            <span className="text-[10px] text-slate-500 font-medium">Select from CRM or type</span>
           </div>
 
           <input
@@ -513,7 +625,7 @@ export default function DeliveryChallanForm({ data, onChange, onLoad, isLoading 
                   key={client.id}
                   type="button"
                   onClick={() => selectClient(client)}
-                  className="w-full text-left px-3 py-2 hover:bg-slate-800 text-xs text-slate-200 flex flex-col"
+                  className="w-full text-left px-3 py-2 hover:bg-slate-800 text-xs text-slate-200 flex flex-col cursor-pointer"
                 >
                   <span className="font-bold text-amber-400">{client.name}</span>
                   <span className="text-[10px] text-slate-400 truncate">{client.address}</span>
@@ -523,77 +635,89 @@ export default function DeliveryChallanForm({ data, onChange, onLoad, isLoading 
           )}
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           <div>
-            <label className="text-[11px] font-bold text-slate-400 uppercase">Customer Address</label>
+            <label className="text-[11px] font-bold text-slate-300 uppercase block mb-1">Customer Address</label>
             <textarea
               rows={2}
               value={data.customerAddress}
               onChange={(e) => handleFieldChange('customerAddress', e.target.value)}
-              className="w-full mt-1 px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-amber-500"
               placeholder="Full party address"
             />
           </div>
 
           <div>
-            <label className="text-[11px] font-bold text-slate-400 uppercase">Customer GSTIN</label>
+            <label className="text-[11px] font-bold text-slate-300 uppercase block mb-1">Customer GSTIN</label>
             <input
               type="text"
               value={data.customerGstin}
               onChange={(e) => handleFieldChange('customerGstin', e.target.value)}
               placeholder="e.g. 36AAQCA3500J1ZP"
-              className="w-full mt-1 px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs font-semibold text-slate-200 focus:outline-none focus:border-amber-500"
+              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs font-semibold text-slate-200 focus:outline-none focus:border-amber-500"
             />
           </div>
         </div>
+      </div>
 
-        {/* References: RGP No, RGP Date, Vehicle No, Quotation Raised, Transport */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-slate-800/80">
+      {/* References: RGP No, RGP Date, Vehicle No, Quotation Raised Card */}
+      <div className="space-y-3.5 bg-slate-900/70 p-4 sm:p-5 rounded-2xl border border-slate-800 shadow-sm">
+        <h4 className="text-xs font-bold text-amber-500 uppercase tracking-widest flex items-center gap-2">
+          <Truck className="w-4 h-4 text-amber-400" /> Gate Pass & Transport Details
+        </h4>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           <div>
-            <label className="text-[10px] font-bold text-slate-400 uppercase">RGP / Gate Pass No</label>
+            <label className="text-[11px] font-bold text-slate-300 uppercase block mb-1">
+              RGP / Gate Pass No
+            </label>
             <input
               type="text"
               value={data.rgpNo}
               onChange={(e) => handleFieldChange('rgpNo', e.target.value)}
               placeholder="e.g. 360/RGP/26-27/00125"
-              className="w-full mt-1 px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs font-semibold text-slate-200 focus:outline-none focus:border-amber-500"
+              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs font-semibold text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-amber-500"
             />
           </div>
 
           <div>
-            <label className="text-[10px] font-bold text-slate-400 uppercase">RGP / Gate Pass Date</label>
+            <label className="text-[11px] font-bold text-slate-300 uppercase block mb-1">
+              RGP / Gate Pass Date
+            </label>
             <input
               type="text"
               value={data.rgpDate}
               onChange={(e) => handleFieldChange('rgpDate', e.target.value)}
-              placeholder="e.g. 25-JUL-26"
-              className="w-full mt-1 px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs font-semibold text-slate-200 focus:outline-none focus:border-amber-500"
+              placeholder="e.g. 25-JUL-2026"
+              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs font-semibold text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-amber-500"
             />
           </div>
 
           <div>
-            <label className="text-[10px] font-bold text-amber-400 uppercase">Quotation Raised</label>
-            <select
-              value={data.quotationRaised || 'No'}
-              onChange={(e) => handleFieldChange('quotationRaised', e.target.value as 'Yes' | 'No')}
-              className="w-full mt-1 px-3 py-2 bg-slate-950 border border-amber-500/40 rounded-lg text-xs font-bold text-amber-400 focus:outline-none focus:border-amber-500"
-            >
-              <option value="No">No</option>
-              <option value="Yes">Yes</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1">
-              <Truck className="w-3 h-3 text-amber-400" /> Vehicle No
+            <label className="text-[11px] font-bold text-slate-300 uppercase flex items-center gap-1.5 block mb-1">
+              Vehicle Number
             </label>
             <input
               type="text"
               value={data.vehicleNo}
               onChange={(e) => handleFieldChange('vehicleNo', e.target.value)}
               placeholder="e.g. TS 08UF 9062"
-              className="w-full mt-1 px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs font-semibold text-slate-200 focus:outline-none focus:border-amber-500"
+              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs font-semibold text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-amber-500"
             />
+          </div>
+
+          <div>
+            <label className="text-[11px] font-bold text-amber-400 uppercase block mb-1">
+              Quotation Raised
+            </label>
+            <select
+              value={data.quotationRaised || 'No'}
+              onChange={(e) => handleFieldChange('quotationRaised', e.target.value as 'Yes' | 'No')}
+              className="w-full px-3 py-2 bg-slate-950 border border-amber-500/40 rounded-lg text-xs font-bold text-amber-400 focus:outline-none focus:border-amber-500"
+            >
+              <option value="No">No (Quotation Not Raised)</option>
+              <option value="Yes">Yes (Quotation Raised)</option>
+            </select>
           </div>
         </div>
       </div>
@@ -627,115 +751,129 @@ export default function DeliveryChallanForm({ data, onChange, onLoad, isLoading 
                 )}
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
-                <div className="sm:col-span-3">
+              {/* Description Input & Auto-suggestions */}
+              <div className="relative">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                  Description / Particulars
+                </label>
+                <input
+                  type="text"
+                  placeholder="Description (e.g. 18kW Stand mine motor / rewinding motor)"
+                  value={item.description}
+                  onChange={(e) => {
+                    handleItemChange(item.id, 'description', e.target.value);
+                    setDescSearch(e.target.value);
+                    setActiveDescId(item.id);
+                  }}
+                  onFocus={() => {
+                    setActiveDescId(item.id);
+                    setDescSearch(item.description || '');
+                  }}
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs font-semibold text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-amber-500"
+                />
+
+                {/* Auto-suggestions dropdown */}
+                {activeDescId === item.id && (() => {
+                  const query = (descSearch || '').trim().toLowerCase();
+                  const filtered = suggestions.filter(s =>
+                    s.description.toLowerCase().includes(query)
+                  ).slice(0, 7);
+
+                  if (filtered.length === 0) return null;
+
+                  return (
+                    <div
+                      ref={descDropdownRef}
+                      className="absolute z-30 left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden divide-y divide-slate-800/80 animate-in fade-in zoom-in-95 duration-100"
+                    >
+                      <div className="p-1.5 bg-slate-950/80 text-[10px] font-bold text-amber-400 uppercase tracking-wider flex items-center justify-between">
+                        <span className="flex items-center gap-1.5">
+                          <History className="w-3 h-3 text-amber-500" />
+                          Previous Entries & Suggestions
+                        </span>
+                        <button
+                          type="button"
+                          onMouseDown={() => setActiveDescId(null)}
+                          className="text-slate-400 hover:text-slate-200 text-xs px-1"
+                        >
+                          ✕
+                        </button>
+                      </div>
+
+                      <div className="max-h-52 overflow-y-auto">
+                        {filtered.map((s, si) => (
+                          <div
+                            key={`dc-sug-${si}`}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              selectSuggestion(item.id, s);
+                            }}
+                            className="px-3 py-2 cursor-pointer hover:bg-amber-500/10 transition-colors flex items-center justify-between text-xs group"
+                          >
+                            <div className="flex-1 pr-2">
+                              <p className="font-semibold text-slate-100 group-hover:text-amber-300 transition-colors">
+                                {s.description}
+                              </p>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                {s.source && (
+                                  <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-xs bg-slate-800 text-slate-400 border border-slate-700">
+                                    {s.source}
+                                  </span>
+                                )}
+                                {s.unit && (
+                                  <span className="text-[10px] text-slate-500">
+                                    UOM: <strong className="text-slate-400">{s.unit}</strong>
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Code, UOM, and Quantity */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                    Code / HSN
+                  </label>
                   <input
                     type="text"
                     placeholder="Material Code"
                     value={item.materialCode || ''}
                     onChange={(e) => handleItemChange(item.id, 'materialCode', e.target.value)}
-                    className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded text-xs font-semibold text-slate-200 focus:outline-none focus:border-amber-500"
+                    className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs font-semibold text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-amber-500"
                   />
                 </div>
 
-                <div className="sm:col-span-5 relative">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                    UOM
+                  </label>
                   <input
                     type="text"
-                    placeholder="Description (e.g. 18kW Stand mine motor / rewinding motor)"
-                    value={item.description}
-                    onChange={(e) => {
-                      handleItemChange(item.id, 'description', e.target.value);
-                      setDescSearch(e.target.value);
-                      setActiveDescId(item.id);
-                    }}
-                    onFocus={() => {
-                      setActiveDescId(item.id);
-                      setDescSearch(item.description || '');
-                    }}
-                    className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded text-xs font-semibold text-slate-200 focus:outline-none focus:border-amber-500"
-                  />
-
-                  {/* Auto-suggestions dropdown */}
-                  {activeDescId === item.id && (() => {
-                    const query = (descSearch || '').trim().toLowerCase();
-                    const filtered = suggestions.filter(s =>
-                      s.description.toLowerCase().includes(query)
-                    ).slice(0, 7);
-
-                    if (filtered.length === 0) return null;
-
-                    return (
-                      <div
-                        ref={descDropdownRef}
-                        className="absolute z-30 left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden divide-y divide-slate-800/80 animate-in fade-in zoom-in-95 duration-100"
-                      >
-                        <div className="p-1.5 bg-slate-950/80 text-[10px] font-bold text-amber-400 uppercase tracking-wider flex items-center justify-between">
-                          <span className="flex items-center gap-1.5">
-                            <History className="w-3 h-3 text-amber-500" />
-                            Previous Entries & Suggestions
-                          </span>
-                          <button
-                            type="button"
-                            onMouseDown={() => setActiveDescId(null)}
-                            className="text-slate-400 hover:text-slate-200 text-xs px-1"
-                          >
-                            ✕
-                          </button>
-                        </div>
-
-                        <div className="max-h-52 overflow-y-auto">
-                          {filtered.map((s, si) => (
-                            <div
-                              key={`dc-sug-${si}`}
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                selectSuggestion(item.id, s);
-                              }}
-                              className="px-3 py-2 cursor-pointer hover:bg-amber-500/10 transition-colors flex items-center justify-between text-xs group"
-                            >
-                              <div className="flex-1 pr-2">
-                                <p className="font-semibold text-slate-100 group-hover:text-amber-300 transition-colors">
-                                  {s.description}
-                                </p>
-                                <div className="flex items-center gap-2 mt-0.5">
-                                  {s.source && (
-                                    <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-xs bg-slate-800 text-slate-400 border border-slate-700">
-                                      {s.source}
-                                    </span>
-                                  )}
-                                  {s.unit && (
-                                    <span className="text-[10px] text-slate-500">
-                                      UOM: <strong className="text-slate-400">{s.unit}</strong>
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-
-                <div className="sm:col-span-2">
-                  <input
-                    type="text"
-                    placeholder="UOM (EA/NOS)"
+                    placeholder="e.g. NOS / EA / SET"
                     value={item.uom || ''}
                     onChange={(e) => handleItemChange(item.id, 'uom', e.target.value)}
-                    className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded text-xs font-semibold text-slate-200 focus:outline-none focus:border-amber-500"
+                    className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs font-semibold text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-amber-500"
                   />
                 </div>
 
-                <div className="sm:col-span-2">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                    Quantity
+                  </label>
                   <input
                     type="number"
                     min="1"
                     placeholder="Qty"
                     value={item.quantity}
                     onChange={(e) => handleItemChange(item.id, 'quantity', Number(e.target.value))}
-                    className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded text-xs font-bold text-amber-400 focus:outline-none focus:border-amber-500"
+                    className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs font-bold text-amber-400 focus:outline-none focus:border-amber-500"
                   />
                 </div>
               </div>

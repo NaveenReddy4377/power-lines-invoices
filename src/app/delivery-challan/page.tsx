@@ -7,7 +7,7 @@ import DeliveryChallanPreview from '@/components/DeliveryChallanPreview';
 import LoadingOverlay from '@/components/LoadingOverlay';
 import FailureModal from '@/components/FailureModal';
 import { DeliveryChallanData, initialDeliveryChallanData } from '@/types';
-import { Printer, RefreshCcw, Save, Loader2, Download, FileSpreadsheet, Sparkles, Edit3, ArrowLeft, CheckCircle2, FolderOpen } from 'lucide-react';
+import { Printer, RefreshCcw, Save, Loader2, Download, FileSpreadsheet, Sparkles, Edit3, ArrowLeft, CheckCircle2, FolderOpen, Columns2, Eye, ZoomIn, ZoomOut } from 'lucide-react';
 import { saveDeliveryChallanToSpreadsheet, getNextDeliveryChallanNumber, loadDeliveryChallan } from '@/app/actions';
 import * as XLSX from 'xlsx';
 import Link from 'next/link';
@@ -40,6 +40,9 @@ function DeliveryChallanContent() {
     details: ''
   });
 
+  const [viewMode, setViewMode] = useState<'split' | 'form' | 'preview'>('split');
+  const [previewZoom, setPreviewZoom] = useState<number>(0.85);
+
   const searchParams = useSearchParams();
   const editId = searchParams.get('edit');
   const router = useRouter();
@@ -47,6 +50,16 @@ function DeliveryChallanContent() {
 
   useEffect(() => {
     setMounted(true);
+    // Responsive viewMode detection for mobile and tablets
+    if (typeof window !== 'undefined') {
+      if (window.innerWidth < 640) {
+        setViewMode('form');
+        setPreviewZoom(0.48);
+      } else if (window.innerWidth < 1024) {
+        setViewMode('form');
+        setPreviewZoom(0.75);
+      }
+    }
     // Replace the static placeholder item ID with a real UUID after hydration
     setData((prev) => ({
       ...prev,
@@ -389,15 +402,52 @@ function DeliveryChallanContent() {
 
         {/* Action Controls */}
         <div className="flex items-center gap-2 sm:gap-3">
+          {/* View Mode Switcher - Responsive across Mobile, Tablet & Desktop */}
+          <div className="flex items-center bg-slate-900 border border-slate-800 rounded-lg p-0.5 shadow-inner">
+            <button
+              type="button"
+              onClick={() => { setViewMode('split'); setPreviewZoom(0.85); }}
+              className={`hidden md:flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                viewMode === 'split' ? 'bg-amber-500 text-slate-950 shadow-sm' : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Split View (Form + Preview)"
+            >
+              <Columns2 className="w-3.5 h-3.5" />
+              <span>Split</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('form')}
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                viewMode === 'form' ? 'bg-amber-500 text-slate-950 shadow-sm' : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Form Focus (Maximized data entry)"
+            >
+              <Edit3 className="w-3.5 h-3.5" />
+              <span>Form</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setViewMode('preview'); setPreviewZoom(typeof window !== 'undefined' && window.innerWidth < 640 ? 0.48 : 1); }}
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                viewMode === 'preview' ? 'bg-amber-500 text-slate-950 shadow-sm' : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Preview Focus (Full A4 inspection)"
+            >
+              <Eye className="w-3.5 h-3.5" />
+              <span>Preview</span>
+            </button>
+          </div>
+
           {isLoading && (
             <div className="flex items-center gap-1.5 text-xs text-amber-400 font-bold">
               <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Loading...</span>
+              <span className="hidden sm:inline">Loading...</span>
             </div>
           )}
 
           {saveSuccessMsg && (
-            <div className="hidden md:flex items-center gap-1.5 text-xs text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/30 px-3 py-1.5 rounded-lg">
+            <div className="hidden lg:flex items-center gap-1.5 text-xs text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/30 px-3 py-1.5 rounded-lg">
               <CheckCircle2 className="w-3.5 h-3.5" />
               <span>{saveSuccessMsg}</span>
             </div>
@@ -405,26 +455,26 @@ function DeliveryChallanContent() {
 
           <button
             onClick={handlePromptLoad}
-            className="hidden sm:flex items-center gap-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 px-3 py-2 text-xs font-bold transition-all cursor-pointer"
+            className="hidden sm:flex items-center gap-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2.5 py-1.5 text-xs font-bold transition-all cursor-pointer"
             title="Load DC by Number"
           >
             <FolderOpen className="w-3.5 h-3.5" />
-            <span>Load DC</span>
+            <span className="hidden md:inline">Load DC</span>
           </button>
 
           <button
             onClick={handleReset}
-            className="hidden sm:flex items-center gap-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white px-3 py-2 text-xs font-bold transition-all cursor-pointer"
+            className="hidden sm:flex items-center gap-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white px-2.5 py-1.5 text-xs font-bold transition-all cursor-pointer"
             title="Create New DC"
           >
             <RefreshCcw className="w-3.5 h-3.5" />
-            <span>New DC</span>
+            <span className="hidden md:inline">New DC</span>
           </button>
 
           <button
             onClick={handleDownloadExcel}
             disabled={isDownloadingExcel}
-            className="hidden sm:flex items-center gap-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/40 px-3 py-2 text-xs font-bold transition-all cursor-pointer"
+            className="hidden lg:flex items-center gap-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/40 px-2.5 py-1.5 text-xs font-bold transition-all cursor-pointer"
             title="Download Excel"
           >
             {isDownloadingExcel ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5" />}
@@ -434,20 +484,22 @@ function DeliveryChallanContent() {
           <button
             onClick={handleSave}
             disabled={isSaving || isLoading}
-            className="flex items-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 text-xs font-extrabold shadow-lg transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+            className="flex items-center gap-1.5 sm:gap-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white px-2.5 sm:px-4 py-2 text-xs font-extrabold shadow-lg transition-all active:scale-95 cursor-pointer disabled:opacity-50"
           >
             {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            <span>{editId ? 'Save Changes' : 'Save to Sheets'}</span>
+            <span className="hidden xs:inline sm:inline">{editId ? 'Save Changes' : 'Save to Sheets'}</span>
+            <span className="xs:hidden sm:hidden">Save</span>
           </button>
 
           <button
             onClick={handlePrint}
             disabled={isSaving || isLoading}
-            className="flex items-center gap-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white px-4 sm:px-5 py-2 text-xs font-extrabold shadow-lg transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+            className="flex items-center gap-1.5 sm:gap-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white px-2.5 sm:px-4 py-2 text-xs font-extrabold shadow-lg transition-all active:scale-95 cursor-pointer disabled:opacity-50"
             title="Save to Google Sheets and Print Challan (Resets all fields)"
           >
             {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
-            <span>Print & Save</span>
+            <span className="hidden sm:inline">Print & Save</span>
+            <span className="sm:hidden">Print</span>
           </button>
         </div>
       </header>
@@ -475,24 +527,89 @@ function DeliveryChallanContent() {
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden print:block bg-[#020617]">
 
         {/* Left Input Form Section */}
-        <section className="w-full md:w-[450px] lg:w-[500px] flex-shrink-0 border-b md:border-b-0 md:border-r border-slate-900 bg-slate-950/40 overflow-y-auto print:hidden shadow-inner custom-scrollbar">
-          <div className="px-6 py-3 border-b border-white/5 bg-white/[0.02] flex items-center justify-between">
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-              {editId ? `Editing Delivery Challan #${data.dcNo}` : 'AI Input & Data Controls'}
-            </p>
-            <span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded font-bold">
-              {data.challanType || 'RGP'} Active
-            </span>
-          </div>
-          <DeliveryChallanForm data={data} onChange={setData} onLoad={handleLoad} isLoading={isLoading} />
-        </section>
+        {viewMode !== 'preview' && (
+          <section className={`border-b md:border-b-0 md:border-r border-slate-900 bg-slate-950/40 overflow-y-auto print:hidden shadow-inner custom-scrollbar ${
+            viewMode === 'form' 
+              ? 'flex-1 w-full max-w-4xl mx-auto py-6 px-4 sm:px-8' 
+              : 'w-full md:w-[500px] lg:w-[550px] xl:w-[600px] flex-shrink-0'
+          }`}>
+            <div className="px-6 py-3 border-b border-white/5 bg-white/[0.02] flex items-center justify-between">
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                {editId ? `Editing Delivery Challan #${data.dcNo}` : 'AI Input & Data Controls'}
+              </p>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded font-bold">
+                  {data.challanType || 'RGP'} Active
+                </span>
+                {viewMode === 'form' && (
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('split')}
+                    className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded font-bold transition-colors cursor-pointer"
+                  >
+                    View Split ➔
+                  </button>
+                )}
+              </div>
+            </div>
+            <DeliveryChallanForm data={data} onChange={setData} onLoad={handleLoad} isLoading={isLoading} />
+          </section>
+        )}
 
         {/* Right Preview Section */}
-        <section className="flex-1 overflow-auto bg-slate-950 p-4 sm:p-8 md:p-12 flex items-start justify-center print:block print:p-0 print:bg-white custom-scrollbar">
-          <div className="relative group/preview shadow-[0_20px_50px_rgba(0,0,0,0.6)] print:shadow-none">
-            <DeliveryChallanPreview data={data} />
-          </div>
-        </section>
+        {viewMode !== 'form' && (
+          <section className="flex-1 overflow-auto bg-slate-950/90 p-4 sm:p-6 flex flex-col items-center print:block print:p-0 print:bg-white custom-scrollbar">
+            {/* Zoom Controls Bar */}
+            <div className="mb-3 flex items-center justify-between w-full max-w-[210mm] px-2 print:hidden">
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="tracking-wide">Live A4 Printable Preview</span>
+              </div>
+              <div className="flex items-center gap-1.5 bg-slate-900/90 border border-slate-800 rounded-lg p-1 shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => setPreviewZoom(prev => Math.max(0.5, +(prev - 0.05).toFixed(2)))}
+                  className="p-1 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition-colors cursor-pointer"
+                  title="Zoom Out"
+                >
+                  <ZoomOut className="w-3.5 h-3.5" />
+                </button>
+                <span className="text-[11px] font-mono font-bold text-amber-400 px-1.5 min-w-[42px] text-center">
+                  {Math.round(previewZoom * 100)}%
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPreviewZoom(prev => Math.min(1.4, +(prev + 0.05).toFixed(2)))}
+                  className="p-1 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition-colors cursor-pointer"
+                  title="Zoom In"
+                >
+                  <ZoomIn className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewZoom(viewMode === 'split' ? 0.85 : 1)}
+                  className="px-2 py-0.5 text-[10px] font-bold text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition-colors cursor-pointer border-l border-slate-800 ml-1"
+                  title="Reset Zoom"
+                >
+                  Fit
+                </button>
+              </div>
+            </div>
+
+            {/* Scaled Preview Wrapper with Safe Margins to never clip */}
+            <div className="w-full flex justify-center overflow-visible">
+              <div 
+                className="transition-transform duration-150 origin-top shadow-[0_20px_50px_rgba(0,0,0,0.6)] print:shadow-none print:transform-none"
+                style={{
+                  transform: `scale(${previewZoom})`,
+                  marginBottom: `${Math.max(0, (1 - previewZoom) * -297)}mm`
+                }}
+              >
+                <DeliveryChallanPreview data={data} />
+              </div>
+            </div>
+          </section>
+        )}
       </main>
 
       {/* Global CSS for Print Optimization */}

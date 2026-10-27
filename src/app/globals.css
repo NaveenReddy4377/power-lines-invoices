@@ -40,6 +40,18 @@ body {
   }
 }
 
+/* Smooth touch scrolling on mobile and tablet devices */
+* {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Optimize touch targets and prevent iOS zoom on mobile inputs */
+@media screen and (max-width: 768px) {
+  input, select, textarea {
+    font-size: 14px;
+  }
+}
+
 @media print {
   @page {
     margin: 0;

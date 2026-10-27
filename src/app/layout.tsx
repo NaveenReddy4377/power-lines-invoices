@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Roboto, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Sidebar from "@/components/Sidebar";
@@ -20,6 +20,13 @@ export const metadata: Metadata = {
   description: "Professional invoice management system for Power Lines Electrical Works",
 };
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+  themeColor: "#0f172a",
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -31,7 +38,7 @@ export default function RootLayout({
       className={`${roboto.variable} ${geistMono.variable} ${roboto.className} h-full antialiased`}
       suppressHydrationWarning
     >
-      <body className="h-full flex overflow-hidden bg-slate-50 text-slate-800" style={{ fontFamily: '"Roboto", sans-serif' }} suppressHydrationWarning>
+      <body className="h-full flex flex-col lg:flex-row overflow-hidden bg-slate-50 text-slate-800" style={{ fontFamily: '"Roboto", sans-serif' }} suppressHydrationWarning>
 
         <Sidebar />
         <main className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
