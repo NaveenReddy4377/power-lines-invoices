@@ -2007,13 +2007,6 @@ export async function saveCashBillToSpreadsheet(data: CashBillData) {
       'RawData': JSON.stringify(data),
     };
 
-    if (targetRow) {
-      targetRow.assign(rowObj);
-      await targetRow.save();
-    } else {
-      await sheet.addRow(rowObj);
-    }
-
     if (data.billNo) {
       lastKnownCashBillNo = data.billNo;
     }
