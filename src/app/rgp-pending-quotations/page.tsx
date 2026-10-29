@@ -210,7 +210,7 @@ export default function RGPPendingQuotationsPage() {
   }, [records, activeTab, searchQuery]);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+    <div className="h-full overflow-y-auto bg-slate-950 text-slate-100 flex flex-col custom-scrollbar">
       {/* ─── Top Header ─── */}
       <header className="border-b border-slate-800 bg-slate-900/90 backdrop-blur-md sticky top-0 z-30 px-4 sm:px-6 py-4">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -277,7 +277,7 @@ export default function RGPPendingQuotationsPage() {
       )}
 
       {/* ─── Main Content ─── */}
-      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-6 space-y-6">
+      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 pt-6 pb-24 space-y-6">
         {/* KPI Summary Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           <div 
