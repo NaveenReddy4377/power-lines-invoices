@@ -237,6 +237,8 @@ export interface DeliveryChallanData {
   vehicleNo: string;
   modeOfTransport: string;
   quotationRaised?: 'Yes' | 'No';
+  quotationNo?: string;
+  quotationDate?: string;
   items: DeliveryChallanItem[];
   remarks: string;
   rgpPhotoUrl?: string;
@@ -252,11 +254,13 @@ export const initialDeliveryChallanData: DeliveryChallanData = {
   customerGstin: '',
   rgpNo: '',
   rgpDate: '',
+  quotationRaised: 'No',
+  quotationNo: '',
+  quotationDate: '',
   poNo: '',
   poDate: '',
   vehicleNo: '',
   modeOfTransport: 'BY ROAD',
-  quotationRaised: 'No',
   items: [
     {
       id: 'item-default-1',

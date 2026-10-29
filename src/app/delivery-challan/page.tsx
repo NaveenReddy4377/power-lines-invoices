@@ -7,7 +7,7 @@ import DeliveryChallanPreview from '@/components/DeliveryChallanPreview';
 import LoadingOverlay from '@/components/LoadingOverlay';
 import FailureModal from '@/components/FailureModal';
 import { DeliveryChallanData, initialDeliveryChallanData } from '@/types';
-import { Printer, RefreshCcw, Save, Loader2, Download, FileSpreadsheet, Sparkles, Edit3, ArrowLeft, CheckCircle2, FolderOpen, Columns2, Eye, ZoomIn, ZoomOut } from 'lucide-react';
+import { Printer, RefreshCcw, Save, Loader2, Download, FileSpreadsheet, Sparkles, Edit3, ArrowLeft, CheckCircle2, FolderOpen, Columns2, Eye, ZoomIn, ZoomOut, Clock } from 'lucide-react';
 import { saveDeliveryChallanToSpreadsheet, getNextDeliveryChallanNumber, loadDeliveryChallan } from '@/app/actions';
 import * as XLSX from 'xlsx';
 import Link from 'next/link';
@@ -325,16 +325,32 @@ function DeliveryChallanContent() {
   const handleDownloadPdf = async () => {
     setIsDownloadingPdf(true);
     try {
+      if (!data.customerName || !data.customerName.trim()) {
+        alert('Please enter or select a Customer name first.');
+        setIsDownloadingPdf(false);
+        return;
+      }
+
+      const element = document.getElementById('dc-capture-area');
+      if (!element) {
+        // Fallback to native print / save as PDF
+        window.print();
+        setIsDownloadingPdf(false);
+        return;
+      }
+
       const domtoimage = (await import('dom-to-image')).default;
       const { jsPDF } = await import('jspdf');
 
-      const element = document.getElementById('dc-capture-area');
-      if (!element) throw new Error('Preview element not found');
-
       const dataUrl = await domtoimage.toJpeg(element, {
-        quality: 0.9,
+        quality: 0.95,
         bgcolor: '#ffffff',
-        style: { transform: 'scale(1)', transformOrigin: 'top left' }
+        style: {
+          transform: 'none',
+          transformOrigin: 'top left',
+          margin: '0',
+          boxShadow: 'none'
+        }
       });
 
       const pdf = new jsPDF({
@@ -345,12 +361,14 @@ function DeliveryChallanContent() {
       });
 
       const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (element.offsetHeight * pdfWidth) / element.offsetWidth;
+      const pdfHeight = (element.offsetHeight * pdfWidth) / (element.offsetWidth || 1);
 
       pdf.addImage(dataUrl, 'JPEG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
-      pdf.save(`${data.dcNo || 'Delivery_Challan'}.pdf`);
+      const safeCustomer = (data.customerName || 'Challan').replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30);
+      pdf.save(`${data.dcNo || 'Delivery_Challan'}_${safeCustomer}.pdf`);
     } catch (err: any) {
-      alert('Failed to download PDF: ' + err.message);
+      console.warn('Direct PDF canvas capture notice, falling back to browser print/save as PDF:', err);
+      window.print();
     } finally {
       setIsDownloadingPdf(false);
     }
@@ -471,6 +489,15 @@ function DeliveryChallanContent() {
             <span className="hidden md:inline">New DC</span>
           </button>
 
+          <Link
+            href="/rgp-pending-quotations"
+            className="hidden sm:flex items-center gap-1.5 rounded-lg bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 border border-purple-500/40 px-2.5 py-1.5 text-xs font-bold transition-all cursor-pointer"
+            title="View all RGPs & Gate Passes pending quotations"
+          >
+            <Clock className="w-3.5 h-3.5 text-purple-400" />
+            <span className="hidden xl:inline">Pending Quotations</span>
+          </Link>
+
           <button
             onClick={handleDownloadExcel}
             disabled={isDownloadingExcel}
@@ -479,6 +506,17 @@ function DeliveryChallanContent() {
           >
             {isDownloadingExcel ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5" />}
             <span>Excel</span>
+          </button>
+
+          {/* Dedicated Download PDF button for Desktop and Mobile */}
+          <button
+            onClick={handleDownloadPdf}
+            disabled={isDownloadingPdf || isLoading}
+            className="flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 sm:px-3 py-2 text-xs font-bold shadow-md transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+            title="Download Delivery Challan as PDF directly"
+          >
+            {isDownloadingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+            <span>PDF</span>
           </button>
 
           <button
@@ -527,89 +565,95 @@ function DeliveryChallanContent() {
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden print:block bg-[#020617]">
 
         {/* Left Input Form Section */}
-        {viewMode !== 'preview' && (
-          <section className={`border-b md:border-b-0 md:border-r border-slate-900 bg-slate-950/40 overflow-y-auto print:hidden shadow-inner custom-scrollbar ${
+        <section 
+          id="dc-form-container"
+          className={`${
+            viewMode === 'preview' ? 'hidden' : 'block'
+          } border-b md:border-b-0 md:border-r border-slate-900 bg-slate-950/40 overflow-y-auto print:hidden shadow-inner custom-scrollbar ${
             viewMode === 'form' 
               ? 'flex-1 w-full max-w-4xl mx-auto py-6 px-4 sm:px-8' 
               : 'w-full md:w-[500px] lg:w-[550px] xl:w-[600px] flex-shrink-0'
-          }`}>
-            <div className="px-6 py-3 border-b border-white/5 bg-white/[0.02] flex items-center justify-between">
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-                {editId ? `Editing Delivery Challan #${data.dcNo}` : 'AI Input & Data Controls'}
-              </p>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded font-bold">
-                  {data.challanType || 'RGP'} Active
-                </span>
-                {viewMode === 'form' && (
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('split')}
-                    className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded font-bold transition-colors cursor-pointer"
-                  >
-                    View Split ➔
-                  </button>
-                )}
-              </div>
+          }`}
+        >
+          <div className="px-6 py-3 border-b border-white/5 bg-white/[0.02] flex items-center justify-between">
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+              {editId ? `Editing Delivery Challan #${data.dcNo}` : 'AI Input & Data Controls'}
+            </p>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded font-bold">
+                {data.challanType || 'RGP'} Active
+              </span>
+              {viewMode === 'form' && (
+                <button
+                  type="button"
+                  onClick={() => setViewMode('split')}
+                  className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded font-bold transition-colors cursor-pointer"
+                >
+                  View Split ➔
+                </button>
+              )}
             </div>
-            <DeliveryChallanForm data={data} onChange={setData} onLoad={handleLoad} isLoading={isLoading} />
-          </section>
-        )}
+          </div>
+          <DeliveryChallanForm data={data} onChange={setData} onLoad={handleLoad} isLoading={isLoading} />
+        </section>
 
-        {/* Right Preview Section */}
-        {viewMode !== 'form' && (
-          <section className="flex-1 overflow-auto bg-slate-950/90 p-4 sm:p-6 flex flex-col items-center print:block print:p-0 print:bg-white custom-scrollbar">
-            {/* Zoom Controls Bar */}
-            <div className="mb-3 flex items-center justify-between w-full max-w-[210mm] px-2 print:hidden">
-              <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="tracking-wide">Live A4 Printable Preview</span>
-              </div>
-              <div className="flex items-center gap-1.5 bg-slate-900/90 border border-slate-800 rounded-lg p-1 shadow-sm">
-                <button
-                  type="button"
-                  onClick={() => setPreviewZoom(prev => Math.max(0.5, +(prev - 0.05).toFixed(2)))}
-                  className="p-1 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition-colors cursor-pointer"
-                  title="Zoom Out"
-                >
-                  <ZoomOut className="w-3.5 h-3.5" />
-                </button>
-                <span className="text-[11px] font-mono font-bold text-amber-400 px-1.5 min-w-[42px] text-center">
-                  {Math.round(previewZoom * 100)}%
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setPreviewZoom(prev => Math.min(1.4, +(prev + 0.05).toFixed(2)))}
-                  className="p-1 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition-colors cursor-pointer"
-                  title="Zoom In"
-                >
-                  <ZoomIn className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPreviewZoom(viewMode === 'split' ? 0.85 : 1)}
-                  className="px-2 py-0.5 text-[10px] font-bold text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition-colors cursor-pointer border-l border-slate-800 ml-1"
-                  title="Reset Zoom"
-                >
-                  Fit
-                </button>
-              </div>
+        {/* Right Preview Section - ALWAYS rendered in DOM for Print / PDF capture */}
+        <section 
+          id="dc-preview-container"
+          className={`${
+            viewMode === 'form' ? 'hidden md:flex print:block' : 'flex'
+          } flex-1 overflow-auto bg-slate-950/90 p-4 sm:p-6 flex-col items-center print:block print:p-0 print:bg-white custom-scrollbar`}
+        >
+          {/* Zoom Controls Bar */}
+          <div className="mb-3 flex items-center justify-between w-full max-w-[210mm] px-2 print:hidden">
+            <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="tracking-wide">Live A4 Printable Preview</span>
             </div>
-
-            {/* Scaled Preview Wrapper with Safe Margins to never clip */}
-            <div className="w-full flex justify-center overflow-visible">
-              <div 
-                className="transition-transform duration-150 origin-top shadow-[0_20px_50px_rgba(0,0,0,0.6)] print:shadow-none print:transform-none"
-                style={{
-                  transform: `scale(${previewZoom})`,
-                  marginBottom: `${Math.max(0, (1 - previewZoom) * -297)}mm`
-                }}
+            <div className="flex items-center gap-1.5 bg-slate-900/90 border border-slate-800 rounded-lg p-1 shadow-sm">
+              <button
+                type="button"
+                onClick={() => setPreviewZoom(prev => Math.max(0.5, +(prev - 0.05).toFixed(2)))}
+                className="p-1 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition-colors cursor-pointer"
+                title="Zoom Out"
               >
-                <DeliveryChallanPreview data={data} />
-              </div>
+                <ZoomOut className="w-3.5 h-3.5" />
+              </button>
+              <span className="text-[11px] font-mono font-bold text-amber-400 px-1.5 min-w-[42px] text-center">
+                {Math.round(previewZoom * 100)}%
+              </span>
+              <button
+                type="button"
+                onClick={() => setPreviewZoom(prev => Math.min(1.4, +(prev + 0.05).toFixed(2)))}
+                className="p-1 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition-colors cursor-pointer"
+                title="Zoom In"
+              >
+                <ZoomIn className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setPreviewZoom(viewMode === 'split' ? 0.85 : 1)}
+                className="px-2 py-0.5 text-[10px] font-bold text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition-colors cursor-pointer border-l border-slate-800 ml-1"
+                title="Reset Zoom"
+              >
+                Fit
+              </button>
             </div>
-          </section>
-        )}
+          </div>
+
+          {/* Scaled Preview Wrapper with Safe Margins to never clip */}
+          <div className="w-full flex justify-center overflow-visible print:w-full print:block print:overflow-visible">
+            <div 
+              className="transition-transform duration-150 origin-top shadow-[0_20px_50px_rgba(0,0,0,0.6)] print:shadow-none print:transform-none"
+              style={{
+                transform: `scale(${previewZoom})`,
+                marginBottom: `${Math.max(0, (1 - previewZoom) * -297)}mm`
+              }}
+            >
+              <DeliveryChallanPreview data={data} />
+            </div>
+          </div>
+        </section>
       </main>
 
       {/* Global CSS for Print Optimization */}
@@ -629,30 +673,54 @@ function DeliveryChallanContent() {
         }
 
         @media print {
-          body {
+          html, body {
             background: white !important;
             color: black !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            width: 100% !important;
+            height: auto !important;
           }
-          header, section:first-of-type, button {
+          header, #dc-form-container, button, nav, aside {
             display: none !important;
           }
           main {
             display: block !important;
             overflow: visible !important;
             background: white !important;
-          }
-          section {
-            padding: 0 !important;
             margin: 0 !important;
+            padding: 0 !important;
             width: 100% !important;
+          }
+          #dc-preview-container {
+            display: block !important;
+            padding: 0 !important;
+            margin: 0 auto !important;
+            width: 100% !important;
+            max-width: 210mm !important;
             overflow: visible !important;
             border: none !important;
+            background: white !important;
           }
           #pdf-wrapper {
+            display: block !important;
             box-shadow: none !important;
-            margin: 0 !important;
+            margin: 0 auto !important;
             padding: 0 !important;
             width: 210mm !important;
+          }
+          #dc-capture-area {
+            box-shadow: none !important;
+            margin: 0 auto !important;
+            width: 210mm !important;
+            min-height: 297mm !important;
+            padding: 6mm 8mm !important;
+            background: white !important;
+            color: #0f172a !important;
+          }
+          @page {
+            size: A4 portrait;
+            margin: 4mm;
           }
         }
       `}</style>

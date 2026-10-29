@@ -334,19 +334,16 @@ function NewInvoice() {
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden print:block bg-slate-950">
 
         {/* Left Pane - Form */}
-        {viewMode !== 'preview' && (
-          <section className={`border-b md:border-b-0 md:border-r border-slate-800 bg-slate-900/40 overflow-y-auto no-scrollbar print:hidden flex flex-col md:block custom-scrollbar ${
-            viewMode === 'form' 
-              ? 'flex-1 w-full max-w-4xl mx-auto py-6 px-4 sm:px-8' 
-              : 'w-full md:w-[500px] lg:w-[550px] xl:w-[600px] flex-shrink-0'
-          }`}>
-            <InvoiceForm data={data} onChange={setData} onLoad={handleLoad} isLoading={isLoading} />
-          </section>
-        )}
+        <section className={`${viewMode === 'preview' ? 'hidden' : 'block'} border-b md:border-b-0 md:border-r border-slate-800 bg-slate-900/40 overflow-y-auto no-scrollbar print:hidden flex-col md:block custom-scrollbar ${
+          viewMode === 'form' 
+            ? 'flex-1 w-full max-w-4xl mx-auto py-6 px-4 sm:px-8' 
+            : 'w-full md:w-[500px] lg:w-[550px] xl:w-[600px] flex-shrink-0'
+        }`}>
+          <InvoiceForm data={data} onChange={setData} onLoad={handleLoad} isLoading={isLoading} />
+        </section>
 
-        {/* Right Pane - Live Preview */}
-        {viewMode !== 'form' && (
-          <section className="flex-1 overflow-auto bg-slate-950/90 p-4 sm:p-6 flex flex-col items-center print:block print:p-0 print:bg-white custom-scrollbar">
+        {/* Right Pane - Live Preview (Always in DOM for reliable Mobile Printing / PDF) */}
+        <section className={`${viewMode === 'form' ? 'hidden md:flex print:block' : 'flex'} flex-1 overflow-auto bg-slate-950/90 p-4 sm:p-6 flex-col items-center print:block print:p-0 print:bg-white custom-scrollbar`}>
             {/* Zoom Controls Bar */}
             <div className="mb-3 flex items-center justify-between w-full max-w-[210mm] px-2 print:hidden">
               <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
@@ -397,7 +394,6 @@ function NewInvoice() {
               </div>
             </div>
           </section>
-        )}
 
       </main>
     </div>

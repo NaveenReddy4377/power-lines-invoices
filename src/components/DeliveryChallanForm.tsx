@@ -712,13 +712,48 @@ export default function DeliveryChallanForm({ data, onChange, onLoad, isLoading 
             </label>
             <select
               value={data.quotationRaised || 'No'}
-              onChange={(e) => handleFieldChange('quotationRaised', e.target.value as 'Yes' | 'No')}
+              onChange={(e) => {
+                const val = e.target.value as 'Yes' | 'No';
+                handleFieldChange('quotationRaised', val);
+                if (val === 'Yes' && !data.quotationDate) {
+                  handleFieldChange('quotationDate', new Date().toISOString().split('T')[0]);
+                }
+              }}
               className="w-full px-3 py-2 bg-slate-950 border border-amber-500/40 rounded-lg text-xs font-bold text-amber-400 focus:outline-none focus:border-amber-500"
             >
               <option value="No">No (Quotation Not Raised)</option>
               <option value="Yes">Yes (Quotation Raised)</option>
             </select>
           </div>
+
+          {data.quotationRaised === 'Yes' && (
+            <>
+              <div>
+                <label className="text-[11px] font-bold text-purple-400 uppercase block mb-1">
+                  Quotation Number
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. PLEW-Q-001"
+                  value={data.quotationNo || ''}
+                  onChange={(e) => handleFieldChange('quotationNo', e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-950 border border-purple-500/40 rounded-lg text-xs font-bold text-purple-300 placeholder:text-slate-600 focus:outline-none focus:border-purple-500"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-purple-400 uppercase block mb-1">
+                  Quotation Date
+                </label>
+                <input
+                  type="date"
+                  value={data.quotationDate || ''}
+                  onClick={(e) => { try { (e.target as any).showPicker(); } catch {} }}
+                  onChange={(e) => handleFieldChange('quotationDate', e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-950 border border-purple-500/40 rounded-lg text-xs text-purple-300 focus:outline-none focus:border-purple-500 cursor-pointer"
+                />
+              </div>
+            </>
+          )}
         </div>
       </div>
 

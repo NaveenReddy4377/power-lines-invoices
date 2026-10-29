@@ -4,7 +4,7 @@ import { GoogleSpreadsheet } from 'google-spreadsheet';
 import { JWT } from 'google-auth-library';
 import fs from 'fs';
 import path from 'path';
-import { InvoiceData, QuotationData, Client, InventoryItem, DeliveryChallanData, CashBillData, PendingBill, BillFollowUp } from '@/types';
+import { InvoiceData, QuotationData, Client, InventoryItem, DeliveryChallanData, initialDeliveryChallanData, CashBillData, PendingBill, BillFollowUp } from '@/types';
 import legacyCompanies from '@/data/companies.json';
 import { revalidatePath } from 'next/cache';
 import {
@@ -1439,6 +1439,15 @@ export async function loadDeliveryChallan(dcNo: string) {
             if (!parsed.rgpPhotoUrl && rows[i].get('RGP Photo URL')) {
               parsed.rgpPhotoUrl = rows[i].get('RGP Photo URL');
             }
+            if (rows[i].get('Quotation No') && !parsed.quotationNo) {
+              parsed.quotationNo = rows[i].get('Quotation No');
+            }
+            if (rows[i].get('Quotation Date') && !parsed.quotationDate) {
+              parsed.quotationDate = rows[i].get('Quotation Date');
+            }
+            if (rows[i].get('Quotation Raised')) {
+              parsed.quotationRaised = rows[i].get('Quotation Raised');
+            }
             return { success: true, data: parsed as DeliveryChallanData };
           } catch (e) {
             console.error('Failed to parse DC RawData JSON:', e);
@@ -1460,6 +1469,8 @@ export async function loadDeliveryChallan(dcNo: string) {
           vehicleNo: rows[i].get('Vehicle No') || '',
           modeOfTransport: 'BY ROAD',
           quotationRaised: (rows[i].get('Quotation Raised') || 'No') as any,
+          quotationNo: rows[i].get('Quotation No') || '',
+          quotationDate: rows[i].get('Quotation Date') || '',
           items: [
             {
               id: crypto.randomUUID(),
@@ -1692,7 +1703,7 @@ export async function saveDeliveryChallanToSpreadsheet(data: DeliveryChallanData
     const doc = await getSheetSafely(5000);
 
     let sheet = doc.sheetsByTitle['Delivery Challans'];
-    const expectedHeaders = ['DC No', 'DC Date', 'Challan Type', 'Customer Name', 'GSTIN', 'RGP No', 'RGP Date', 'Quotation Raised', 'Vehicle No', 'RGP Photo URL', 'Status', 'RawData'];
+    const expectedHeaders = ['DC No', 'DC Date', 'Challan Type', 'Customer Name', 'GSTIN', 'RGP No', 'RGP Date', 'Quotation Raised', 'Quotation No', 'Quotation Date', 'Vehicle No', 'RGP Photo URL', 'Status', 'RawData'];
 
     if (!sheet) {
       sheet = await doc.addSheet({ title: 'Delivery Challans', headerValues: expectedHeaders });
@@ -1700,7 +1711,7 @@ export async function saveDeliveryChallanToSpreadsheet(data: DeliveryChallanData
       try { await sheet.loadHeaderRow(); } catch (e) {}
       try {
         const headers = sheet.headerValues || [];
-        if (!headers.includes('Quotation Raised') || !headers.includes('RGP Photo URL')) {
+        if (!headers.includes('Quotation Raised') || !headers.includes('Quotation No') || !headers.includes('RGP Photo URL')) {
           await sheet.setHeaderRow(expectedHeaders);
         }
       } catch (err) {}
@@ -1708,6 +1719,8 @@ export async function saveDeliveryChallanToSpreadsheet(data: DeliveryChallanData
 
     const rows = await sheet.getRows();
     let targetRow = rows.find(r => r.get('DC No') === data.dcNo);
+
+    const isQuotationRaised = data.quotationRaised === 'Yes' || (data.quotationNo && data.quotationNo.trim() !== '') ? 'Yes' : 'No';
 
     const rowObj = {
       'DC No': data.dcNo,
@@ -1717,7 +1730,9 @@ export async function saveDeliveryChallanToSpreadsheet(data: DeliveryChallanData
       'GSTIN': data.customerGstin,
       'RGP No': data.rgpNo,
       'RGP Date': data.rgpDate,
-      'Quotation Raised': data.quotationRaised || 'No',
+      'Quotation Raised': isQuotationRaised,
+      'Quotation No': data.quotationNo || '',
+      'Quotation Date': data.quotationDate || '',
       'Vehicle No': data.vehicleNo,
       'RGP Photo URL': data.rgpPhotoUrl || '',
       'Status': data.status || 'Pending',
@@ -1816,6 +1831,8 @@ export async function getDeliveryChallanList() {
             rgpNo: r.get('RGP No') || '',
             rgpDate: r.get('RGP Date') || '',
             quotationRaised: r.get('Quotation Raised') || (rawData?.quotationRaised) || 'No',
+            quotationNo: r.get('Quotation No') || (rawData?.quotationNo) || '',
+            quotationDate: r.get('Quotation Date') || (rawData?.quotationDate) || '',
             type: r.get('Challan Type') || 'Returnable',
             rgpPhotoUrl: r.get('RGP Photo URL') || rawData?.rgpPhotoUrl || '',
             status: r.get('Status') || 'Pending',
@@ -1828,6 +1845,93 @@ export async function getDeliveryChallanList() {
     console.error('getDeliveryChallanList error:', e);
   }
   return list;
+}
+
+export async function getRGPsPendingQuotation() {
+  try {
+    const dcList = await getDeliveryChallanList();
+    
+    return dcList.map((item: any) => {
+      const raw = item.rawData || {};
+      const quotationNo = item.quotationNo || raw.quotationNo || '';
+      const quotationDate = item.quotationDate || raw.quotationDate || '';
+      const quotationRaised = item.quotationRaised === 'Yes' || raw.quotationRaised === 'Yes' || (quotationNo.trim() !== '');
+
+      return {
+        dcNo: item.id || '',
+        dcDate: item.date || '',
+        customerName: item.customer || raw.customerName || '',
+        customerGstin: raw.customerGstin || '',
+        customerAddress: raw.customerAddress || '',
+        rgpNo: item.rgpNo || raw.rgpNo || '',
+        rgpDate: item.rgpDate || raw.rgpDate || '',
+        vehicleNo: raw.vehicleNo || '',
+        challanType: item.type || raw.challanType || 'Returnable',
+        quotationRaised: quotationRaised ? 'Yes' : 'No',
+        quotationNo,
+        quotationDate,
+        rgpPhotoUrl: item.rgpPhotoUrl || raw.rgpPhotoUrl || '',
+        items: Array.isArray(raw.items) ? raw.items : [],
+        remarks: raw.remarks || '',
+        status: item.status || raw.status || 'Pending'
+      };
+    });
+  } catch (err: any) {
+    console.error('getRGPsPendingQuotation error:', err);
+    return [];
+  }
+}
+
+export async function updateRGPQuotationDetails(
+  dcNo: string,
+  quotationNo: string,
+  quotationDate: string,
+  markRaised: boolean = true
+) {
+  try {
+    if (!dcNo || !dcNo.trim()) {
+      return { success: false, error: 'DC Number is required' };
+    }
+
+    const cleanDcNo = dcNo.trim();
+    const cleanQNo = (quotationNo || '').trim();
+    const cleanQDate = (quotationDate || '').trim();
+    const isRaised = markRaised || !!cleanQNo;
+
+    // 1. Fetch current DC
+    const loadRes = await loadDeliveryChallan(cleanDcNo);
+    let dcData: DeliveryChallanData;
+    if (loadRes.success && loadRes.data) {
+      dcData = loadRes.data;
+    } else {
+      dcData = {
+        ...initialDeliveryChallanData,
+        dcNo: cleanDcNo,
+      };
+    }
+
+    dcData.quotationNo = cleanQNo;
+    dcData.quotationDate = cleanQDate;
+    dcData.quotationRaised = isRaised ? 'Yes' : 'No';
+
+    // 2. Save updated DC back to Google Sheets & Supabase
+    const saveRes = await saveDeliveryChallanToSpreadsheet(dcData);
+    if (!saveRes.success) {
+      return { success: false, error: saveRes.error || 'Failed to update Google Sheets' };
+    }
+
+    revalidatePath('/rgp-pending-quotations');
+    revalidatePath('/delivery-challan');
+
+    return {
+      success: true,
+      message: `Quotation details successfully updated for DC #${cleanDcNo}`,
+      data: dcData
+    };
+  } catch (err: any) {
+    console.error('updateRGPQuotationDetails error:', err);
+    return { success: false, error: err.message || 'Failed to update quotation details' };
+  }
 }
 
 // ────────────────────── CASH BILL ACTIONS (Non-GST) ──────────────────────

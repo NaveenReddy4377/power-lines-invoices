@@ -513,64 +513,62 @@ function CashBillContent() {
         )}
 
         {/* Right: Live A4 Printable Preview */}
-        {viewMode !== 'form' && (
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-950/80 flex flex-col items-center print:w-full print:p-0 print:m-0 print:bg-white print:overflow-visible custom-scrollbar">
-            {/* Zoom Controls Bar */}
-            <div className="mb-3 flex items-center justify-between w-full max-w-[210mm] px-2 print:hidden">
-              <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="tracking-wide">Live A4 Printable Cash Bill</span>
-              </div>
-              <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg p-1 shadow-sm">
-                <button
-                  type="button"
-                  onClick={() => setPreviewZoom(prev => Math.max(0.5, +(prev - 0.05).toFixed(2)))}
-                  className="p-1 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition-colors cursor-pointer"
-                  title="Zoom Out"
-                >
-                  <ZoomOut className="w-3.5 h-3.5" />
-                </button>
-                <span className="text-[11px] font-mono font-bold text-emerald-400 px-1.5 min-w-[42px] text-center">
-                  {Math.round(previewZoom * 100)}%
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setPreviewZoom(prev => Math.min(1.4, +(prev + 0.05).toFixed(2)))}
-                  className="p-1 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition-colors cursor-pointer"
-                  title="Zoom In"
-                >
-                  <ZoomIn className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPreviewZoom(viewMode === 'split' ? 0.85 : 1)}
-                  className="px-2 py-0.5 text-[10px] font-bold text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition-colors cursor-pointer border-l border-slate-800 ml-1"
-                  title="Reset Zoom"
-                >
-                  Fit
-                </button>
-              </div>
+        <div 
+          id="cb-preview-container"
+          className={`flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-950/80 flex-col items-center print:w-full print:p-0 print:m-0 print:bg-white print:overflow-visible custom-scrollbar ${
+            viewMode === 'form' ? 'hidden md:flex print:block' : 'flex'
+          }`}
+        >
+          {/* Zoom Controls Bar */}
+          <div className="mb-3 flex items-center justify-between w-full max-w-[210mm] px-2 print:hidden">
+            <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="tracking-wide">Live A4 Printable Cash Bill</span>
             </div>
-
-            {/* Scaled Preview Wrapper with safe margins */}
-            <div className="w-full flex justify-center overflow-visible">
-              <div 
-                className="transition-transform duration-150 origin-top shadow-[0_20px_50px_rgba(0,0,0,0.6)] print:shadow-none print:transform-none"
-                style={{
-                  transform: `scale(${previewZoom})`,
-                  marginBottom: `${Math.max(0, (1 - previewZoom) * -297)}mm`
-                }}
+            <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg p-1 shadow-sm">
+              <button
+                type="button"
+                onClick={() => setPreviewZoom(prev => Math.max(0.5, +(prev - 0.05).toFixed(2)))}
+                className="p-1 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition-colors cursor-pointer"
+                title="Zoom Out"
               >
-                <CashBillPreview data={data} />
-              </div>
+                <ZoomOut className="w-3.5 h-3.5" />
+              </button>
+              <span className="text-[11px] font-mono font-bold text-emerald-400 px-1.5 min-w-[42px] text-center">
+                {Math.round(previewZoom * 100)}%
+              </span>
+              <button
+                type="button"
+                onClick={() => setPreviewZoom(prev => Math.min(1.4, +(prev + 0.05).toFixed(2)))}
+                className="p-1 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition-colors cursor-pointer"
+                title="Zoom In"
+              >
+                <ZoomIn className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setPreviewZoom(viewMode === 'split' ? 0.85 : 1)}
+                className="px-2 py-0.5 text-[10px] font-bold text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition-colors cursor-pointer border-l border-slate-800 ml-1"
+                title="Reset Zoom"
+              >
+                Fit
+              </button>
             </div>
           </div>
-        )}
-      </div>
 
-      {/* Print only display on small screens */}
-      <div className="hidden print:block print:w-full print:m-0">
-        <CashBillPreview data={data} />
+          {/* Scaled Preview Wrapper with safe margins */}
+          <div className="w-full flex justify-center overflow-visible">
+            <div 
+              className="transition-transform duration-150 origin-top shadow-[0_20px_50px_rgba(0,0,0,0.6)] print:shadow-none print:transform-none"
+              style={{
+                transform: `scale(${previewZoom})`,
+                marginBottom: `${Math.max(0, (1 - previewZoom) * -297)}mm`
+              }}
+            >
+              <CashBillPreview data={data} />
+            </div>
+          </div>
+        </div>
       </div>
 
       <LoadingOverlay isOpen={isLoading} title={`Loading Cash Bill: ${loadingDocId}`} accentColor="emerald" />

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, FileText, Receipt, Quote, Users, Settings, Zap, Database, ChevronLeft, ChevronRight, Building2, Package, Truck, CalendarClock, Menu, X } from 'lucide-react';
+import { LayoutDashboard, FileText, Receipt, Quote, Users, Settings, Zap, Database, ChevronLeft, ChevronRight, Building2, Package, Truck, CalendarClock, Menu, X, ClipboardList } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
 const navItems = [
@@ -12,6 +12,7 @@ const navItems = [
   { href: '/pending-bills', icon: CalendarClock, label: 'Pending Bills & Follow-ups' },
   { href: '/quotations/new', icon: Quote, label: 'Quotations' },
   { href: '/delivery-challan', icon: Truck, label: 'Delivery Challan' },
+  { href: '/rgp-pending-quotations', icon: ClipboardList, label: 'RGPs Pending Quotation' },
   { href: '/clients', icon: Building2, label: 'Clients CRM' },
   { href: '/inventory', icon: Package, label: 'Inventory' },
   { href: '/motor-quotations', icon: Zap, label: 'Motor Quotation' },
