@@ -21,7 +21,7 @@ export default function CashBillPreview({ data }: Props) {
     <div id="pdf-wrapper" className="w-full flex justify-center">
       <div
         id="cb-capture-area"
-        className="w-[210mm] min-h-[297mm] bg-white text-slate-900 p-8 sm:p-10 flex flex-col justify-between shadow-2xl relative font-sans print:shadow-none print:p-6 print:m-0"
+        className="w-[210mm] min-h-[297mm] print:min-h-0 print:h-auto print:w-full print:max-w-[200mm] bg-white text-slate-900 p-8 sm:p-10 print:p-3 print:m-0 flex flex-col justify-between shadow-2xl relative font-sans print:shadow-none"
         style={{ boxSizing: 'border-box' }}
       >
         {/* Document Header */}

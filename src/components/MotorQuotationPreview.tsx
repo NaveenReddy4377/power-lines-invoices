@@ -24,7 +24,7 @@ export default function MotorQuotationPreview({ data }: MotorQuotationPreviewPro
   };
 
   return (
-    <div className="w-[210mm] shrink-0 mx-auto relative text-black bg-white pb-6 print:pb-0" id="pdf-wrapper" style={{padding:"10px", fontFamily: '"Roboto", sans-serif'}}>
+    <div className="w-[210mm] print:w-full print:max-w-[200mm] shrink-0 mx-auto relative text-black bg-white p-2.5 print:p-0 pb-6 print:pb-0" id="pdf-wrapper" style={{ fontFamily: '"Roboto", sans-serif' }}>
       <div 
         id="quotation-capture-area" 
         className="w-full text-left border border-black border-collapse bg-white flex flex-col text-[11px] border-t-[8px] border-t-amber-600 relative overflow-hidden" 

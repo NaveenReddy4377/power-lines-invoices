@@ -54,8 +54,20 @@ body {
 
 @media print {
   @page {
-    margin: 0;
     size: A4 portrait;
+    margin: 5mm;
+  }
+
+  /* Reset preview zoom scale and negative margins so print renders at 100% full A4 size */
+  .preview-scale-wrapper,
+  [style*="scale"] {
+    transform: none !important;
+    -webkit-transform: none !important;
+    margin: 0 auto !important;
+    margin-bottom: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-shadow: none !important;
   }
 
   /* Reset scrolling containers so browser can paginate naturally */
@@ -64,37 +76,67 @@ body {
     min-height: 0 !important;
     overflow: visible !important;
     display: block !important;
+    background: white !important;
+    color: black !important;
   }
 
-  /* Force hide left pane and top nav in print unconditionally */
-  header, [class*="print:hidden"], aside {
+  /* Force hide navigation, left form pane, and non-printable elements */
+  header, [class*="print:hidden"], aside, nav, button {
     display: none !important;
   }
 
-  /* Let capture areas take full natural height and flow normally */
+  /* Print preview containers */
+  #dc-preview-container,
+  #cb-preview-container {
+    display: block !important;
+    padding: 0 !important;
+    margin: 0 auto !important;
+    width: 100% !important;
+    max-width: 200mm !important;
+    overflow: visible !important;
+    border: none !important;
+    background: white !important;
+  }
+
+  /* Universal PDF wrappers and capture areas */
+  #pdf-wrapper,
+  #dc-capture-area,
+  #cb-capture-area,
   #invoice-capture-area,
   #quotation-capture-area {
     width: 100% !important;
-    max-width: 210mm !important;
-    margin: 0 !important;
-    padding: 0 !important;
+    max-width: 200mm !important;
+    min-height: 0 !important;
+    height: auto !important;
+    margin: 0 auto !important;
     box-shadow: none !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
-    border-top-width: 8px !important;
-    min-height: 0 !important;
+    page-break-after: avoid !important;
+    break-after: avoid !important;
   }
 
   #invoice-capture-area {
+    border-top-width: 8px !important;
     border-top-color: #10b981 !important;
+    padding: 0 !important;
   }
   #quotation-capture-area {
+    border-top-width: 8px !important;
     border-top-color: #9333ea !important;
+    padding: 0 !important;
   }
 
-  /* Never break inside footers */
+  #dc-capture-area,
+  #cb-capture-area {
+    padding: 3mm 4mm !important;
+  }
+
+  /* Never break inside footers, signatures, and summary rows */
   #invoice-footer,
-  #quotation-footer {
+  #quotation-footer,
+  .break-inside-avoid,
+  tr {
     break-inside: avoid;
     page-break-inside: avoid;
   }

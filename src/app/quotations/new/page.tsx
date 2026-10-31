@@ -400,9 +400,9 @@ function NewQuotation() {
             </div>
 
             {/* Scaled Preview Wrapper with safe margins */}
-            <div className="w-full flex justify-center overflow-visible">
+            <div className="w-full flex justify-center overflow-visible print:w-full print:block print:overflow-visible">
               <div 
-                className="transition-transform duration-150 origin-top shadow-[0_20px_50px_rgba(0,0,0,0.6)] print:shadow-none print:transform-none"
+                className="preview-scale-wrapper transition-transform duration-150 origin-top shadow-[0_20px_50px_rgba(0,0,0,0.6)] print:!transform-none print:!m-0 print:!mb-0 print:!w-full print:shadow-none"
                 style={{
                   transform: `scale(${previewZoom})`,
                   marginBottom: `${Math.max(0, (1 - previewZoom) * -297)}mm`

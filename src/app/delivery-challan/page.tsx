@@ -644,7 +644,7 @@ function DeliveryChallanContent() {
           {/* Scaled Preview Wrapper with Safe Margins to never clip */}
           <div className="w-full flex justify-center overflow-visible print:w-full print:block print:overflow-visible">
             <div 
-              className="transition-transform duration-150 origin-top shadow-[0_20px_50px_rgba(0,0,0,0.6)] print:shadow-none print:transform-none"
+              className="preview-scale-wrapper transition-transform duration-150 origin-top shadow-[0_20px_50px_rgba(0,0,0,0.6)] print:!transform-none print:!m-0 print:!mb-0 print:!w-full print:shadow-none"
               style={{
                 transform: `scale(${previewZoom})`,
                 marginBottom: `${Math.max(0, (1 - previewZoom) * -297)}mm`
@@ -692,12 +692,22 @@ function DeliveryChallanContent() {
             padding: 0 !important;
             width: 100% !important;
           }
+          .preview-scale-wrapper,
+          [style*="scale"] {
+            transform: none !important;
+            -webkit-transform: none !important;
+            margin: 0 auto !important;
+            margin-bottom: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            box-shadow: none !important;
+          }
           #dc-preview-container {
             display: block !important;
             padding: 0 !important;
             margin: 0 auto !important;
             width: 100% !important;
-            max-width: 210mm !important;
+            max-width: 200mm !important;
             overflow: visible !important;
             border: none !important;
             background: white !important;
@@ -707,20 +717,25 @@ function DeliveryChallanContent() {
             box-shadow: none !important;
             margin: 0 auto !important;
             padding: 0 !important;
-            width: 210mm !important;
+            width: 100% !important;
+            max-width: 200mm !important;
           }
           #dc-capture-area {
             box-shadow: none !important;
             margin: 0 auto !important;
-            width: 210mm !important;
-            min-height: 297mm !important;
-            padding: 6mm 8mm !important;
+            width: 100% !important;
+            max-width: 200mm !important;
+            min-height: 0 !important;
+            height: auto !important;
+            padding: 3mm 4mm !important;
             background: white !important;
             color: #0f172a !important;
+            page-break-after: avoid !important;
+            break-after: avoid !important;
           }
           @page {
             size: A4 portrait;
-            margin: 4mm;
+            margin: 5mm;
           }
         }
       `}</style>
