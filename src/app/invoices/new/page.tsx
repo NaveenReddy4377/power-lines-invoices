@@ -7,6 +7,7 @@ import InvoicePreview from '@/components/InvoicePreview';
 import EmailModal from '@/components/EmailModal';
 import LoadingOverlay from '@/components/LoadingOverlay';
 import FailureModal from '@/components/FailureModal';
+import OverwriteConfirmModal from '@/components/OverwriteConfirmModal';
 import SuccessModal from '@/components/SuccessModal';
 import { InvoiceData, initialInvoiceData } from '@/types';
 import { Save, Printer, FileSpreadsheet, Mail, Send, ArrowLeft, Edit3, Loader2, Columns2, Eye, ZoomIn, ZoomOut } from 'lucide-react';
@@ -33,6 +34,12 @@ function NewInvoice() {
     isOpen: false,
     message: '',
     details: ''
+  });
+  const [overwriteModal, setOverwriteModal] = useState<{
+    isOpen: boolean;
+    existingRecord?: any;
+  }>({
+    isOpen: false
   });
   const [successModal, setSuccessModal] = useState<{
     isOpen: boolean;
@@ -116,7 +123,8 @@ function NewInvoice() {
     }
   };
 
-  const handleSaveAndProcess = async () => {
+  const handleSaveAndProcess = async (eOrOverwrite?: React.MouseEvent | boolean) => {
+    const allowOverwrite = eOrOverwrite === true;
     if (data.items.length === 0 || data.billTo.name.trim() === '') {
       setFailureModal({
         isOpen: true,
@@ -137,13 +145,21 @@ function NewInvoice() {
         return;
       }
 
-      const res = await saveToSpreadsheet(data);
+      const res = await saveToSpreadsheet(data, allowOverwrite);
+      if (res.requiresConfirmation) {
+        setIsSaving(false);
+        setOverwriteModal({
+          isOpen: true,
+          existingRecord: res.existingRecord
+        });
+        return;
+      }
       if (!res.success) {
         setFailureModal({
           isOpen: true,
           message: `Failed to save Invoice #${data.invoiceNo} into Google Sheets.`,
           details: res.error || 'Spreadsheet insertion error.',
-          onRetry: handleSaveAndProcess
+          onRetry: () => handleSaveAndProcess(allowOverwrite)
         });
         return;
       }
@@ -295,6 +311,20 @@ function NewInvoice() {
         subtitle={loadingDocId?.includes('Next') || loadingDocId?.includes('Auto') ? 'Connecting to Google Sheets & fetching latest invoice sequence...' : 'Connecting to Google Sheets & loading full invoice details...'}
         accentColor="emerald"
         iconType="invoice"
+      />
+
+      {/* Overwrite Confirmation Modal */}
+      <OverwriteConfirmModal
+        isOpen={overwriteModal.isOpen}
+        onClose={() => setOverwriteModal(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={() => {
+          setOverwriteModal(prev => ({ ...prev, isOpen: false }));
+          handleSaveAndProcess(true);
+        }}
+        docType="Invoice"
+        docNumber={data.invoiceNo}
+        existingRecordInfo={overwriteModal.existingRecord}
+        isSaving={isSaving}
       />
 
       {/* Failure Popup for Invoice */}

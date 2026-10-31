@@ -7,6 +7,7 @@ import QuotationPreview from '@/components/QuotationPreview';
 import EmailModal from '@/components/EmailModal';
 import LoadingOverlay from '@/components/LoadingOverlay';
 import FailureModal from '@/components/FailureModal';
+import OverwriteConfirmModal from '@/components/OverwriteConfirmModal';
 import SuccessModal from '@/components/SuccessModal';
 import { QuotationData, initialQuotationData } from '@/types';
 import { Printer, Save, Loader2, Mail, Send, ArrowLeft, Edit3, Columns2, Eye, ZoomIn, ZoomOut } from 'lucide-react';
@@ -33,6 +34,12 @@ function NewQuotation() {
     isOpen: false,
     message: '',
     details: ''
+  });
+  const [overwriteModal, setOverwriteModal] = useState<{
+    isOpen: boolean;
+    existingRecord?: any;
+  }>({
+    isOpen: false
   });
   const [successModal, setSuccessModal] = useState<{
     isOpen: boolean;
@@ -134,7 +141,8 @@ function NewQuotation() {
     }
   };
 
-  const handleSaveAndProcess = async () => {
+  const handleSaveAndProcess = async (eOrOverwrite?: React.MouseEvent | boolean) => {
+    const allowOverwrite = eOrOverwrite === true;
     if (!data.billTo.name.trim()) {
       setFailureModal({
         isOpen: true,
@@ -155,13 +163,21 @@ function NewQuotation() {
         return;
       }
 
-      const res = await saveQuotation(data);
+      const res = await saveQuotation(data, allowOverwrite);
+      if (res.requiresConfirmation) {
+        setIsSaving(false);
+        setOverwriteModal({
+          isOpen: true,
+          existingRecord: res.existingRecord
+        });
+        return;
+      }
       if (!res.success) {
         setFailureModal({
           isOpen: true,
           message: `Failed to save Quotation #${data.quotationNo} into Google Sheets.`,
           details: res.error || 'Spreadsheet insertion error.',
-          onRetry: handleSaveAndProcess
+          onRetry: () => handleSaveAndProcess(allowOverwrite)
         });
         return;
       }

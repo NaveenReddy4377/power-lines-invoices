@@ -6,6 +6,7 @@ import CashBillForm from '@/components/CashBillForm';
 import CashBillPreview from '@/components/CashBillPreview';
 import LoadingOverlay from '@/components/LoadingOverlay';
 import FailureModal from '@/components/FailureModal';
+import OverwriteConfirmModal from '@/components/OverwriteConfirmModal';
 import { CashBillData, initialCashBillData } from '@/types';
 import { Printer, RefreshCcw, Save, Loader2, Download, FileSpreadsheet, ArrowLeft, CheckCircle2, FolderOpen, Receipt, Sparkles, Columns2, Edit3, Eye, ZoomIn, ZoomOut } from 'lucide-react';
 import { saveCashBillToSpreadsheet, getNextCashBillNumber, loadCashBill } from '@/app/actions';
@@ -45,6 +46,14 @@ function CashBillContent() {
     isOpen: false,
     message: '',
     details: ''
+  });
+  const [overwriteModal, setOverwriteModal] = useState<{
+    isOpen: boolean;
+    existingRecord?: any;
+    pendingAction: 'save' | 'print';
+  }>({
+    isOpen: false,
+    pendingAction: 'save'
   });
 
   const [viewMode, setViewMode] = useState<'split' | 'form' | 'preview'>('split');
@@ -185,7 +194,8 @@ function CashBillContent() {
     }
   };
 
-  const handleSave = async () => {
+  const handleSave = async (eOrOverwrite?: React.MouseEvent | boolean) => {
+    const allowOverwrite = eOrOverwrite === true;
     if (!data.billNo) {
       alert('Bill Number is required.');
       return;
@@ -197,7 +207,16 @@ function CashBillContent() {
 
     setIsSaving(true);
     try {
-      const res = await saveCashBillToSpreadsheet(data);
+      const res = await saveCashBillToSpreadsheet(data, allowOverwrite);
+      if (res.requiresConfirmation) {
+        setIsSaving(false);
+        setOverwriteModal({
+          isOpen: true,
+          existingRecord: res.existingRecord,
+          pendingAction: 'save'
+        });
+        return;
+      }
       if (res.success) {
         setSaveSuccessMsg(`Cash Bill #${data.billNo} saved to Google Sheets and Supabase successfully!`);
         setTimeout(() => setSaveSuccessMsg(null), 5000);
@@ -318,10 +337,19 @@ function CashBillContent() {
     }
   };
 
-  const handlePrint = async () => {
+  const handlePrint = async (eOrOverwrite?: React.MouseEvent | boolean) => {
+    const allowOverwrite = eOrOverwrite === true;
     if (data.billNo && data.customerName) {
       try {
-        await saveCashBillToSpreadsheet(data);
+        const res = await saveCashBillToSpreadsheet(data, allowOverwrite);
+        if (res.requiresConfirmation) {
+          setOverwriteModal({
+            isOpen: true,
+            existingRecord: res.existingRecord,
+            pendingAction: 'print'
+          });
+          return;
+        }
       } catch (e) {
         console.warn('Auto-save before print error:', e);
       }
@@ -572,6 +600,24 @@ function CashBillContent() {
       </div>
 
       <LoadingOverlay isOpen={isLoading} title={`Loading Cash Bill: ${loadingDocId}`} accentColor="emerald" />
+
+      <OverwriteConfirmModal
+        isOpen={overwriteModal.isOpen}
+        onClose={() => setOverwriteModal(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={() => {
+          const action = overwriteModal.pendingAction;
+          setOverwriteModal(prev => ({ ...prev, isOpen: false }));
+          if (action === 'print') {
+            handlePrint(true);
+          } else {
+            handleSave(true);
+          }
+        }}
+        docType="Cash Bill"
+        docNumber={data.billNo}
+        existingRecordInfo={overwriteModal.existingRecord}
+        isSaving={isSaving}
+      />
 
       <FailureModal
         isOpen={failureModal.isOpen}

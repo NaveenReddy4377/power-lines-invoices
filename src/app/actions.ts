@@ -213,7 +213,7 @@ export async function getNextInvoiceNumber() {
   return defaultStart;
 }
 
-export async function saveToSpreadsheet(data: InvoiceData) {
+export async function saveToSpreadsheet(data: InvoiceData, allowOverwrite: boolean = false) {
   try {
     const doc = await getSheetSafely();
     const sheet = doc.sheetsByIndex[0];
@@ -244,6 +244,20 @@ export async function saveToSpreadsheet(data: InvoiceData) {
       else if (data.poNumber && row.get('PO Number') === data.poNumber) {
         throw new Error(`PO Number ${data.poNumber} is already used in Invoice ${row.get('Invoice No')}!`);
       }
+    }
+
+    if (targetRow && !allowOverwrite) {
+      return {
+        success: false,
+        requiresConfirmation: true,
+        existingRecord: {
+          docNumber: data.invoiceNo,
+          customerName: targetRow.get('Billed To') || '',
+          date: targetRow.get('Date') || '',
+          amount: targetRow.get('Grand Total (₹)') || ''
+        },
+        message: `Invoice #${data.invoiceNo} already exists in Google Sheets for "${targetRow.get('Billed To') || 'Customer'}".`
+      };
     }
 
     const rowObj = {
@@ -539,7 +553,7 @@ export async function getNextQuotationNumber() {
   return defaultStart;
 }
 
-export async function saveQuotation(data: QuotationData) {
+export async function saveQuotation(data: QuotationData, allowOverwrite: boolean = false) {
   try {
     const items = data.items || [];
     const itemsWithTots = items.map(item => {
@@ -570,19 +584,34 @@ export async function saveQuotation(data: QuotationData) {
       'RawData': JSON.stringify(data),
     };
 
+    // Check if quotation already exists before proceeding
+    let doc = await getSheetSafely();
+    let sheet = await getOrCreateSheet(doc, 'Quotations');
+    const rows = await sheet.getRows();
+    let targetRow = null;
+    for (const row of rows) {
+      if (row.get('Quotation No') === rowObj['Quotation No']) {
+        targetRow = row;
+        break;
+      }
+    }
+
+    if (targetRow && !allowOverwrite) {
+      return {
+        success: false,
+        requiresConfirmation: true,
+        existingRecord: {
+          docNumber: data.quotationNo,
+          customerName: targetRow.get('Billed To') || '',
+          date: targetRow.get('Date') || '',
+          amount: targetRow.get('Grand Total (₹)') || ''
+        },
+        message: `Quotation #${data.quotationNo} already exists in Google Sheets for "${targetRow.get('Billed To') || 'Customer'}".`
+      };
+    }
+
     // Google Sheets write with retry
     const sheetWrite = async () => {
-      let doc = await getSheetSafely();
-      let sheet = await getOrCreateSheet(doc, 'Quotations');
-      const rows = await sheet.getRows();
-      let targetRow = null;
-      for (const row of rows) {
-        if (row.get('Quotation No') === rowObj['Quotation No']) {
-          targetRow = row;
-          break;
-        }
-      }
-
       if (targetRow) {
         targetRow.assign(rowObj);
         await targetRow.save();
@@ -1698,7 +1727,7 @@ export async function uploadPOFile(base64Data: string, originalFileName: string,
   }
 }
 
-export async function saveDeliveryChallanToSpreadsheet(data: DeliveryChallanData) {
+export async function saveDeliveryChallanToSpreadsheet(data: DeliveryChallanData, allowOverwrite: boolean = false) {
   try {
     const doc = await getSheetSafely(5000);
 
@@ -1719,6 +1748,20 @@ export async function saveDeliveryChallanToSpreadsheet(data: DeliveryChallanData
 
     const rows = await sheet.getRows();
     let targetRow = rows.find(r => r.get('DC No') === data.dcNo);
+
+    if (targetRow && !allowOverwrite) {
+      return {
+        success: false,
+        requiresConfirmation: true,
+        existingRecord: {
+          docNumber: data.dcNo,
+          customerName: targetRow.get('Customer Name') || '',
+          date: targetRow.get('DC Date') || '',
+          amount: ''
+        },
+        message: `Delivery Challan #${data.dcNo} already exists in Google Sheets for "${targetRow.get('Customer Name') || 'Customer'}".`
+      };
+    }
 
     const isQuotationRaised = data.quotationRaised === 'Yes' || (data.quotationNo && data.quotationNo.trim() !== '') ? 'Yes' : 'No';
 
@@ -1969,7 +2012,7 @@ export async function getNextCashBillNumber() {
   return defaultStart;
 }
 
-export async function saveCashBillToSpreadsheet(data: CashBillData) {
+export async function saveCashBillToSpreadsheet(data: CashBillData, allowOverwrite: boolean = false) {
   try {
     const doc = await getSheetSafely(5000);
 
@@ -1990,6 +2033,20 @@ export async function saveCashBillToSpreadsheet(data: CashBillData) {
 
     const rows = await sheet.getRows();
     let targetRow = rows.find(r => r.get('Bill No') === data.billNo);
+
+    if (targetRow && !allowOverwrite) {
+      return {
+        success: false,
+        requiresConfirmation: true,
+        existingRecord: {
+          docNumber: data.billNo,
+          customerName: targetRow.get('Customer Name') || '',
+          date: targetRow.get('Date') || '',
+          amount: targetRow.get('Total Amount') || ''
+        },
+        message: `Cash Bill #${data.billNo} already exists in Google Sheets for "${targetRow.get('Customer Name') || 'Customer'}".`
+      };
+    }
 
     const subtotal = (data.items || []).reduce((sum, item) => sum + (Number(item.quantity || 0) * Number(item.rate || 0)), 0);
     const totalAmount = Math.max(0, subtotal - Number(data.discount || 0));

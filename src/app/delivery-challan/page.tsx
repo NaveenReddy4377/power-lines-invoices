@@ -6,6 +6,7 @@ import DeliveryChallanForm from '@/components/DeliveryChallanForm';
 import DeliveryChallanPreview from '@/components/DeliveryChallanPreview';
 import LoadingOverlay from '@/components/LoadingOverlay';
 import FailureModal from '@/components/FailureModal';
+import OverwriteConfirmModal from '@/components/OverwriteConfirmModal';
 import { DeliveryChallanData, initialDeliveryChallanData } from '@/types';
 import { Printer, RefreshCcw, Save, Loader2, Download, FileSpreadsheet, Sparkles, Edit3, ArrowLeft, CheckCircle2, FolderOpen, Columns2, Eye, ZoomIn, ZoomOut, Clock } from 'lucide-react';
 import { saveDeliveryChallanToSpreadsheet, getNextDeliveryChallanNumber, loadDeliveryChallan } from '@/app/actions';
@@ -38,6 +39,14 @@ function DeliveryChallanContent() {
     isOpen: false,
     message: '',
     details: ''
+  });
+  const [overwriteModal, setOverwriteModal] = useState<{
+    isOpen: boolean;
+    existingRecord?: any;
+    pendingAction: 'save' | 'print';
+  }>({
+    isOpen: false,
+    pendingAction: 'save'
   });
 
   const [viewMode, setViewMode] = useState<'split' | 'form' | 'preview'>('split');
@@ -182,7 +191,8 @@ function DeliveryChallanContent() {
     }
   };
 
-  const handlePrint = async () => {
+  const handlePrint = async (eOrOverwrite?: React.MouseEvent | boolean) => {
+    const allowOverwrite = eOrOverwrite === true;
     if (!data.customerName || !data.customerName.trim()) {
       setFailureModal({
         isOpen: true,
@@ -195,7 +205,16 @@ function DeliveryChallanContent() {
     setIsSaving(true);
     try {
       // 1. First save to Google Sheets
-      const res = await saveDeliveryChallanToSpreadsheet(data);
+      const res = await saveDeliveryChallanToSpreadsheet(data, allowOverwrite);
+      if (res.requiresConfirmation) {
+        setIsSaving(false);
+        setOverwriteModal({
+          isOpen: true,
+          existingRecord: res.existingRecord,
+          pendingAction: 'print'
+        });
+        return;
+      }
       if (!res.success) {
         setFailureModal({
           isOpen: true,
@@ -229,7 +248,8 @@ function DeliveryChallanContent() {
     }
   };
 
-  const handleSave = async () => {
+  const handleSave = async (eOrOverwrite?: React.MouseEvent | boolean) => {
+    const allowOverwrite = eOrOverwrite === true;
     if (!data.customerName || !data.customerName.trim()) {
       setFailureModal({
         isOpen: true,
@@ -241,7 +261,16 @@ function DeliveryChallanContent() {
 
     setIsSaving(true);
     try {
-      const res = await saveDeliveryChallanToSpreadsheet(data);
+      const res = await saveDeliveryChallanToSpreadsheet(data, allowOverwrite);
+      if (res.requiresConfirmation) {
+        setIsSaving(false);
+        setOverwriteModal({
+          isOpen: true,
+          existingRecord: res.existingRecord,
+          pendingAction: 'save'
+        });
+        return;
+      }
       if (res.success) {
         setSaveSuccessMsg(`Saved Delivery Challan #${data.dcNo} to Google Sheets & Supabase!`);
         setTimeout(() => setSaveSuccessMsg(null), 4000);
@@ -252,7 +281,7 @@ function DeliveryChallanContent() {
           isOpen: true,
           message: `Insertion to Google Sheets failed for Delivery Challan #${data.dcNo}.`,
           details: res.error || 'Failed to update or add row in "Delivery Challans" tab.',
-          onRetry: handleSave
+          onRetry: () => handleSave(allowOverwrite)
         });
       }
     } catch (err: any) {
@@ -550,6 +579,25 @@ function DeliveryChallanContent() {
         subtitle={loadingDocId?.includes('Next') || loadingDocId?.includes('Auto') ? 'Connecting to Google Sheets & fetching latest DC sequence...' : 'Connecting to Google Sheets & loading full Delivery Challan record...'}
         accentColor="amber"
         iconType="delivery-challan"
+      />
+
+      {/* Overwrite Confirmation Modal */}
+      <OverwriteConfirmModal
+        isOpen={overwriteModal.isOpen}
+        onClose={() => setOverwriteModal(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={() => {
+          const action = overwriteModal.pendingAction;
+          setOverwriteModal(prev => ({ ...prev, isOpen: false }));
+          if (action === 'print') {
+            handlePrint(true);
+          } else {
+            handleSave(true);
+          }
+        }}
+        docType="Delivery Challan"
+        docNumber={data.dcNo}
+        existingRecordInfo={overwriteModal.existingRecord}
+        isSaving={isSaving}
       />
 
       {/* Failure Popup for Delivery Challan */}

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { InvoiceData, Client, InventoryItem } from '@/types';
 import { Plus, Trash2, Building, ScanLine, FileText, IndianRupee, Zap, Sparkles, Loader2, History, Upload, AlertCircle, CheckCircle2, ExternalLink, Copy, Image as ImageIcon, Camera } from 'lucide-react';
 import { prepareFileForUpload } from '@/utils/imageCompressor';
+import OverwriteConfirmModal from '@/components/OverwriteConfirmModal';
 import { getClients, getInventory, getPreviousDescriptions, DescriptionSuggestion, uploadPOFile, extractInvoiceFromPO, extractInvoiceFromPOUrl } from '@/app/actions';
 import { getMotorSuggestions, findMotorPrice, approvedCompanies } from '@/data/motor-rates';
 
@@ -59,6 +60,7 @@ export default function InvoiceForm({ data, onChange, onLoad, isLoading }: Props
   const [extractSuccess, setExtractSuccess] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const [uploadStatusText, setUploadStatusText] = useState<string>('');
+  const [pendingAiData, setPendingAiData] = useState<{ data: any; url?: string } | null>(null);
   const [extractedCount, setExtractedCount] = useState<number | null>(null);
   const [copiedUrl, setCopiedUrl] = useState(false);
 
@@ -181,9 +183,14 @@ export default function InvoiceForm({ data, onChange, onLoad, isLoading }: Props
       }
 
       if (ocrRes.status === 'fulfilled' && ocrRes.value.success && ocrRes.value.data) {
-        applyExtractedPO(ocrRes.value.data, storedUrl);
-        setExtractSuccess(true);
-        setTimeout(() => setExtractSuccess(false), 8000);
+        const hasExisting = Boolean(data.billTo?.name?.trim() || (data.items?.length > 0 && data.items[0]?.name?.trim()));
+        if (hasExisting) {
+          setPendingAiData({ data: ocrRes.value.data, url: storedUrl });
+        } else {
+          applyExtractedPO(ocrRes.value.data, storedUrl);
+          setExtractSuccess(true);
+          setTimeout(() => setExtractSuccess(false), 8000);
+        }
       } else {
         const errMsg = ocrRes.status === 'fulfilled' 
           ? ocrRes.value.error 
@@ -377,6 +384,30 @@ export default function InvoiceForm({ data, onChange, onLoad, isLoading }: Props
             </label>
           )}
         </div>
+
+        {/* AI Overwrite Confirmation Modal */}
+        <OverwriteConfirmModal
+          isOpen={Boolean(pendingAiData)}
+          onClose={() => {
+            if (pendingAiData?.url) {
+              onChange({ ...data, poCopyUrl: pendingAiData.url });
+            }
+            setPendingAiData(null);
+          }}
+          onConfirm={() => {
+            if (pendingAiData) {
+              applyExtractedPO(pendingAiData.data, pendingAiData.url);
+              setExtractSuccess(true);
+              setTimeout(() => setExtractSuccess(false), 8000);
+              setPendingAiData(null);
+            }
+          }}
+          docType="Form Field"
+          title="Overwrite Existing Fields with PO Data?"
+          message="This invoice form already has client or line item details entered. Do you want to overwrite these fields with the data extracted from the PO document?"
+          confirmLabel="Yes, Overwrite Fields"
+          cancelLabel="Keep Current Fields"
+        />
 
         {/* Document Preview Card if attached */}
         {data.poCopyUrl && (

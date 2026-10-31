@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { QuotationData, Client, InventoryItem } from '@/types';
 import { Plus, Trash2, Building, ScanLine, FileText, List, IndianRupee, Sparkles, Loader2, History, Upload, AlertCircle, CheckCircle2, ExternalLink, Copy, Image as ImageIcon, Camera } from 'lucide-react';
 import { prepareFileForUpload } from '@/utils/imageCompressor';
+import OverwriteConfirmModal from '@/components/OverwriteConfirmModal';
 import { getClients, getInventory, getPreviousDescriptions, DescriptionSuggestion, uploadRGPPhoto, extractQuotationFromRGP, extractQuotationFromRGPUrl } from '@/app/actions';
 import { getMotorSuggestions, findMotorPrice, approvedCompanies } from '@/data/motor-rates';
 
@@ -58,6 +59,7 @@ export default function QuotationForm({ data, onChange, onLoad, isLoading }: Pro
   const [extractSuccess, setExtractSuccess] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const [uploadStatusText, setUploadStatusText] = useState<string>('');
+  const [pendingAiData, setPendingAiData] = useState<{ data: any; url?: string } | null>(null);
   const [extractedCount, setExtractedCount] = useState<number | null>(null);
   const [copiedUrl, setCopiedUrl] = useState(false);
 
@@ -399,6 +401,30 @@ export default function QuotationForm({ data, onChange, onLoad, isLoading }: Pro
             </label>
           )}
         </div>
+
+        {/* AI Overwrite Confirmation Modal */}
+        <OverwriteConfirmModal
+          isOpen={Boolean(pendingAiData)}
+          onClose={() => {
+            if (pendingAiData?.url) {
+              onChange({ ...data, rgpPhotoUrl: pendingAiData.url });
+            }
+            setPendingAiData(null);
+          }}
+          onConfirm={() => {
+            if (pendingAiData) {
+              applyExtractedRGP(pendingAiData.data, pendingAiData.url);
+              setExtractSuccess(true);
+              setTimeout(() => setExtractSuccess(false), 8000);
+              setPendingAiData(null);
+            }
+          }}
+          docType="Form Field"
+          title="Overwrite Existing Fields with Quotation Data?"
+          message="This quotation form already has client or motor item details entered. Do you want to overwrite these fields with the data extracted from the RGP document?"
+          confirmLabel="Yes, Overwrite Fields"
+          cancelLabel="Keep Current Fields"
+        />
 
         {/* Document Preview Card if attached */}
         {data.rgpPhotoUrl && (

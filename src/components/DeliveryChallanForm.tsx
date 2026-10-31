@@ -5,6 +5,7 @@ import { DeliveryChallanData, DeliveryChallanItem, Client } from '@/types';
 import { extractDCFromImage, extractDCFromUrl, getClients, uploadRGPPhoto, getPreviousDescriptions, DescriptionSuggestion } from '@/app/actions';
 import { Upload, Sparkles, Plus, Trash2, Building, Truck, FileText, Loader2, CheckCircle2, AlertCircle, Image as ImageIcon, ExternalLink, History, Copy, Camera } from 'lucide-react';
 import { prepareFileForUpload } from '@/utils/imageCompressor';
+import OverwriteConfirmModal from '@/components/OverwriteConfirmModal';
 
 interface DeliveryChallanFormProps {
   data: DeliveryChallanData;
@@ -99,6 +100,7 @@ export default function DeliveryChallanForm({ data, onChange, onLoad, isLoading 
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [extractedItemsCount, setExtractedItemsCount] = useState<number | null>(null);
   const [uploadStatusText, setUploadStatusText] = useState<string>('');
+  const [pendingAiData, setPendingAiData] = useState<{ data: any; url?: string } | null>(null);
 
   const applyExtractedData = (ext: any, photoUrl?: string) => {
     let rawCustomerName = (ext.customerName || '').trim();
@@ -213,9 +215,14 @@ export default function DeliveryChallanForm({ data, onChange, onLoad, isLoading 
       }
 
       if (ocrRes.status === 'fulfilled' && ocrRes.value.success && ocrRes.value.data) {
-        applyExtractedData(ocrRes.value.data, storedUrl);
-        setExtractSuccess(true);
-        setTimeout(() => setExtractSuccess(false), 8000);
+        const hasExisting = Boolean(data.customerName?.trim() || (data.items?.length > 0 && data.items[0]?.description?.trim()));
+        if (hasExisting) {
+          setPendingAiData({ data: ocrRes.value.data, url: storedUrl });
+        } else {
+          applyExtractedData(ocrRes.value.data, storedUrl);
+          setExtractSuccess(true);
+          setTimeout(() => setExtractSuccess(false), 8000);
+        }
       } else {
         const errMsg = ocrRes.status === 'fulfilled' 
           ? ocrRes.value.error 
@@ -373,7 +380,31 @@ export default function DeliveryChallanForm({ data, onChange, onLoad, isLoading 
           )}
         </div>
 
-        {/* Visual Document Preview Card (Stored in Database & Sheet) */}
+        {/* AI Overwrite Confirmation Modal */}
+      <OverwriteConfirmModal
+        isOpen={Boolean(pendingAiData)}
+        onClose={() => {
+          if (pendingAiData?.url) {
+            onChange({ ...data, rgpPhotoUrl: pendingAiData.url });
+          }
+          setPendingAiData(null);
+        }}
+        onConfirm={() => {
+          if (pendingAiData) {
+            applyExtractedData(pendingAiData.data, pendingAiData.url);
+            setExtractSuccess(true);
+            setTimeout(() => setExtractSuccess(false), 8000);
+            setPendingAiData(null);
+          }
+        }}
+        docType="Form Field"
+        title="Overwrite Existing Fields with AI Data?"
+        message="This form already contains customer or item details. Do you want to overwrite these fields with the extracted AI details?"
+        confirmLabel="Yes, Overwrite Fields"
+        cancelLabel="Keep Current Fields"
+      />
+
+      {/* Visual Document Preview Card (Stored in Database & Sheet) */}
         {data.rgpPhotoUrl && (
           <div className="p-3 bg-slate-950/90 border border-slate-800 rounded-xl flex flex-col sm:flex-row items-center gap-3.5 shadow-inner animate-in fade-in slide-in-from-top-1">
             {/* Thumbnail or Document Icon */}
