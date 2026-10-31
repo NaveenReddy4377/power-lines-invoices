@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { InvoiceData, Client, InventoryItem } from '@/types';
-import { Plus, Trash2, Building, ScanLine, FileText, IndianRupee, Zap, Sparkles, Loader2, History, Upload, AlertCircle, CheckCircle2, ExternalLink, Copy, Image as ImageIcon } from 'lucide-react';
+import { Plus, Trash2, Building, ScanLine, FileText, IndianRupee, Zap, Sparkles, Loader2, History, Upload, AlertCircle, CheckCircle2, ExternalLink, Copy, Image as ImageIcon, Camera } from 'lucide-react';
+import { prepareFileForUpload } from '@/utils/imageCompressor';
 import { getClients, getInventory, getPreviousDescriptions, DescriptionSuggestion, uploadPOFile, extractInvoiceFromPO, extractInvoiceFromPOUrl } from '@/app/actions';
 import { getMotorSuggestions, findMotorPrice, approvedCompanies } from '@/data/motor-rates';
 
@@ -57,6 +58,7 @@ export default function InvoiceForm({ data, onChange, onLoad, isLoading }: Props
   const [extractError, setExtractError] = useState<string | null>(null);
   const [extractSuccess, setExtractSuccess] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
+  const [uploadStatusText, setUploadStatusText] = useState<string>('');
   const [extractedCount, setExtractedCount] = useState<number | null>(null);
   const [copiedUrl, setCopiedUrl] = useState(false);
 
@@ -149,10 +151,7 @@ export default function InvoiceForm({ data, onChange, onLoad, isLoading }: Props
     });
   };
 
-  const handlePOFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const processPOFile = async (file: File) => {
     setIsUploadingPO(true);
     setIsExtractingPO(true);
     setUploadError(null);
@@ -160,55 +159,54 @@ export default function InvoiceForm({ data, onChange, onLoad, isLoading }: Props
     setUploadSuccess(false);
     setExtractSuccess(false);
     setExtractedCount(null);
+    setUploadStatusText('Compressing document for fast AI upload...');
 
     try {
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const base64 = reader.result as string;
-        const mimeType = file.type || (file.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg');
+      // 1. Client-side compression
+      const { base64, mimeType, fileName } = await prepareFileForUpload(file);
 
-        const [uploadRes, ocrRes] = await Promise.allSettled([
-          uploadPOFile(base64, file.name, mimeType),
-          extractInvoiceFromPO(base64, mimeType)
-        ]);
+      setUploadStatusText('AI reading PO details & auto-filling form...');
 
-        let storedUrl = data.poCopyUrl;
-        if (uploadRes.status === 'fulfilled' && uploadRes.value.success && uploadRes.value.url) {
-          storedUrl = uploadRes.value.url;
-          setUploadSuccess(true);
-        } else if (uploadRes.status === 'fulfilled' && uploadRes.value.error) {
-          console.warn('PO upload notice:', uploadRes.value.error);
+      const [uploadRes, ocrRes] = await Promise.allSettled([
+        uploadPOFile(base64, fileName, mimeType),
+        extractInvoiceFromPO(base64, mimeType)
+      ]);
+
+      let storedUrl = data.poCopyUrl;
+      if (uploadRes.status === 'fulfilled' && uploadRes.value.success && uploadRes.value.url) {
+        storedUrl = uploadRes.value.url;
+        setUploadSuccess(true);
+      } else if (uploadRes.status === 'fulfilled' && uploadRes.value.error) {
+        console.warn('PO upload notice:', uploadRes.value.error);
+      }
+
+      if (ocrRes.status === 'fulfilled' && ocrRes.value.success && ocrRes.value.data) {
+        applyExtractedPO(ocrRes.value.data, storedUrl);
+        setExtractSuccess(true);
+        setTimeout(() => setExtractSuccess(false), 8000);
+      } else {
+        const errMsg = ocrRes.status === 'fulfilled' 
+          ? ocrRes.value.error 
+          : (ocrRes.reason?.message || 'Failed to extract PO details');
+        setExtractError(errMsg);
+        if (storedUrl) {
+          onChange({ ...data, poCopyUrl: storedUrl });
         }
-
-        if (ocrRes.status === 'fulfilled' && ocrRes.value.success && ocrRes.value.data) {
-          applyExtractedPO(ocrRes.value.data, storedUrl);
-          setExtractSuccess(true);
-          setTimeout(() => setExtractSuccess(false), 8000);
-        } else {
-          const errMsg = ocrRes.status === 'fulfilled' 
-            ? ocrRes.value.error 
-            : (ocrRes.reason?.message || 'Failed to extract PO details');
-          setExtractError(errMsg);
-          if (storedUrl) {
-            onChange({ ...data, poCopyUrl: storedUrl });
-          }
-        }
-
-        setIsUploadingPO(false);
-        setIsExtractingPO(false);
-      };
-
-      reader.onerror = () => {
-        setUploadError('Failed to read file from disk.');
-        setIsUploadingPO(false);
-        setIsExtractingPO(false);
-      };
-
-      reader.readAsDataURL(file);
+      }
     } catch (err: any) {
       setUploadError(err.message || 'PO file upload failed.');
+    } finally {
       setIsUploadingPO(false);
       setIsExtractingPO(false);
+      setUploadStatusText('');
+    }
+  };
+
+  const handlePOFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (file) {
+      processPOFile(file);
     }
   };
 
@@ -318,48 +316,67 @@ export default function InvoiceForm({ data, onChange, onLoad, isLoading }: Props
           </div>
         )}
 
-        {/* Drag & Drop Upload Zone */}
-        <label className={`block border-2 border-dashed rounded-xl p-4 transition-all cursor-pointer group ${
-          isExtractingPO || isUploadingPO
-            ? 'border-emerald-500 bg-emerald-500/10 cursor-wait'
-            : 'border-emerald-500/40 hover:border-emerald-400 hover:bg-emerald-500/5 bg-slate-950/60'
-        }`}>
-          <input
-            type="file"
-            accept="image/*,application/pdf"
-            onChange={handlePOFileUpload}
-            disabled={isUploadingPO || isExtractingPO}
-            className="hidden"
-          />
+        {/* Dual Upload Options: Direct Camera & Gallery / PDF */}
+        <div className="space-y-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            {/* Direct Camera Button */}
+            <label className={`flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-emerald-500/20 to-teal-600/10 hover:from-emerald-500/30 hover:to-teal-600/20 active:scale-[0.99] border border-emerald-500/40 hover:border-emerald-400 rounded-xl cursor-pointer transition-all text-emerald-300 font-bold text-xs shadow-sm ${
+              isExtractingPO || isUploadingPO ? 'opacity-50 pointer-events-none' : ''
+            }`}>
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handlePOFileUpload}
+                disabled={isUploadingPO || isExtractingPO}
+                className="hidden"
+              />
+              <Camera className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>Take Photo (Camera)</span>
+            </label>
+
+            {/* Gallery / PDF Button */}
+            <label className={`flex items-center justify-center gap-2 px-4 py-3 bg-slate-900 hover:bg-slate-800 active:scale-[0.99] border border-slate-700 hover:border-slate-600 rounded-xl cursor-pointer transition-all text-slate-200 font-bold text-xs shadow-sm ${
+              isExtractingPO || isUploadingPO ? 'opacity-50 pointer-events-none' : ''
+            }`}>
+              <input
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={handlePOFileUpload}
+                disabled={isUploadingPO || isExtractingPO}
+                className="hidden"
+              />
+              <ImageIcon className="w-4 h-4 text-slate-300 shrink-0" />
+              <span>Choose from Gallery / PDF</span>
+            </label>
+          </div>
+
+          {/* Progress / Dropzone */}
           {isExtractingPO || isUploadingPO ? (
-            <div className="flex flex-col items-center gap-2.5 py-2 text-center">
+            <div className="flex flex-col items-center gap-2 p-3.5 border border-emerald-500/40 bg-emerald-500/10 rounded-xl text-center animate-pulse">
               <div className="flex items-center gap-2">
-                <Sparkles className="w-6 h-6 text-emerald-400 animate-pulse" />
-                <Loader2 className="w-7 h-7 text-emerald-400 animate-spin" />
+                <Sparkles className="w-5 h-5 text-emerald-400 animate-spin" />
+                <Loader2 className="w-6 h-6 text-emerald-400 animate-spin" />
               </div>
               <span className="text-xs font-bold text-emerald-300 tracking-wide">
-                AI Reading PO Document & Auto-filling Form...
+                {uploadStatusText || 'AI Reading PO Document & Auto-filling Form...'}
               </span>
               <span className="text-[11px] text-slate-400">
                 Extracting Customer Name, GSTIN, PO Number, Date, Price, and Item Table
               </span>
             </div>
           ) : (
-            <div className="flex flex-col sm:flex-row items-center gap-3 py-1">
-              <div className="p-3 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 group-hover:scale-110 group-hover:bg-emerald-500/20 transition-all shrink-0">
-                <Upload className="w-6 h-6" />
-              </div>
-              <div className="text-center sm:text-left">
-                <div className="text-xs font-bold text-emerald-300 group-hover:text-emerald-200 transition-colors">
-                  Click or drag Purchase Order (PO) document (PDF or Image) here
-                </div>
-                <div className="text-[11px] text-slate-400 mt-0.5">
-                  🤖 AI will read your PO copy and auto-fill client name, PO number, date, rates, and items instantly
-                </div>
-              </div>
-            </div>
+            <label className="hidden md:flex flex-col items-center justify-center p-3 border border-dashed border-emerald-500/20 hover:border-emerald-400/50 hover:bg-emerald-500/5 rounded-xl cursor-pointer transition-all text-center">
+              <input
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={handlePOFileUpload}
+                className="hidden"
+              />
+              <span className="text-[11px] text-slate-400">Or drag and drop PO copy file here</span>
+            </label>
           )}
-        </label>
+        </div>
 
         {/* Document Preview Card if attached */}
         {data.poCopyUrl && (

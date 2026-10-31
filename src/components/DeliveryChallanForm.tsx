@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { DeliveryChallanData, DeliveryChallanItem, Client } from '@/types';
 import { extractDCFromImage, extractDCFromUrl, getClients, uploadRGPPhoto, getPreviousDescriptions, DescriptionSuggestion } from '@/app/actions';
-import { Upload, Sparkles, Plus, Trash2, Building, Truck, FileText, Loader2, CheckCircle2, AlertCircle, Image as ImageIcon, ExternalLink, History, Copy } from 'lucide-react';
+import { Upload, Sparkles, Plus, Trash2, Building, Truck, FileText, Loader2, CheckCircle2, AlertCircle, Image as ImageIcon, ExternalLink, History, Copy, Camera } from 'lucide-react';
+import { prepareFileForUpload } from '@/utils/imageCompressor';
 
 interface DeliveryChallanFormProps {
   data: DeliveryChallanData;
@@ -97,6 +98,7 @@ export default function DeliveryChallanForm({ data, onChange, onLoad, isLoading 
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [extractedItemsCount, setExtractedItemsCount] = useState<number | null>(null);
+  const [uploadStatusText, setUploadStatusText] = useState<string>('');
 
   const applyExtractedData = (ext: any, photoUrl?: string) => {
     let rawCustomerName = (ext.customerName || '').trim();
@@ -180,10 +182,7 @@ export default function DeliveryChallanForm({ data, onChange, onLoad, isLoading 
     });
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const processFile = async (file: File) => {
     setIsUploadingPhoto(true);
     setIsExtracting(true);
     setUploadError(null);
@@ -191,56 +190,56 @@ export default function DeliveryChallanForm({ data, onChange, onLoad, isLoading 
     setUploadSuccess(false);
     setExtractSuccess(false);
     setExtractedItemsCount(null);
+    setUploadStatusText('Optimizing photo for fast upload...');
 
     try {
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const base64 = reader.result as string;
-        const mimeType = file.type || (file.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg');
+      // 1. Client-side compression: converts 10MB-25MB camera shots down to ~400KB JPEG
+      const { base64, mimeType, fileName } = await prepareFileForUpload(file);
 
-        // Simultaneously upload photo to storage and run Gemini AI OCR
-        const [photoRes, ocrRes] = await Promise.allSettled([
-          uploadRGPPhoto(base64, file.name, mimeType),
-          extractDCFromImage(base64, mimeType)
-        ]);
+      setUploadStatusText('AI reading document details & auto-filling form...');
 
-        let storedUrl = data.rgpPhotoUrl;
-        if (photoRes.status === 'fulfilled' && photoRes.value.success && photoRes.value.url) {
-          storedUrl = photoRes.value.url;
-          setUploadSuccess(true);
-        } else if (photoRes.status === 'fulfilled' && photoRes.value.error) {
-          console.warn('Storage upload error:', photoRes.value.error);
+      // 2. Simultaneously upload photo to storage and run Gemini AI OCR
+      const [photoRes, ocrRes] = await Promise.allSettled([
+        uploadRGPPhoto(base64, fileName, mimeType),
+        extractDCFromImage(base64, mimeType)
+      ]);
+
+      let storedUrl = data.rgpPhotoUrl;
+      if (photoRes.status === 'fulfilled' && photoRes.value.success && photoRes.value.url) {
+        storedUrl = photoRes.value.url;
+        setUploadSuccess(true);
+      } else if (photoRes.status === 'fulfilled' && photoRes.value.error) {
+        console.warn('Storage upload error:', photoRes.value.error);
+      }
+
+      if (ocrRes.status === 'fulfilled' && ocrRes.value.success && ocrRes.value.data) {
+        applyExtractedData(ocrRes.value.data, storedUrl);
+        setExtractSuccess(true);
+        setTimeout(() => setExtractSuccess(false), 8000);
+      } else {
+        const errMsg = ocrRes.status === 'fulfilled' 
+          ? ocrRes.value.error 
+          : (ocrRes.reason?.message || 'Failed to extract text from document');
+        setExtractError(errMsg);
+        if (storedUrl) {
+          onChange({ ...data, rgpPhotoUrl: storedUrl });
         }
-
-        if (ocrRes.status === 'fulfilled' && ocrRes.value.success && ocrRes.value.data) {
-          applyExtractedData(ocrRes.value.data, storedUrl);
-          setExtractSuccess(true);
-          setTimeout(() => setExtractSuccess(false), 8000);
-        } else {
-          const errMsg = ocrRes.status === 'fulfilled' 
-            ? ocrRes.value.error 
-            : (ocrRes.reason?.message || 'Failed to extract text from document');
-          setExtractError(errMsg);
-          if (storedUrl) {
-            onChange({ ...data, rgpPhotoUrl: storedUrl });
-          }
-        }
-
-        setIsUploadingPhoto(false);
-        setIsExtracting(false);
-      };
-
-      reader.onerror = () => {
-        setUploadError('Failed to read file from disk.');
-        setIsUploadingPhoto(false);
-        setIsExtracting(false);
-      };
-
-      reader.readAsDataURL(file);
+      }
     } catch (err: any) {
       setUploadError(err.message || 'Upload process failed.');
+    } finally {
       setIsUploadingPhoto(false);
       setIsExtracting(false);
+      setUploadStatusText('');
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // Clear value immediately so retaking camera photos always fires onChange
+    e.target.value = '';
+    if (file) {
+      processFile(file);
     }
   };
 
@@ -312,48 +311,67 @@ export default function DeliveryChallanForm({ data, onChange, onLoad, isLoading 
           </div>
         </div>
 
-        {/* Upload File Zone */}
-        <label className={`relative flex flex-col items-center justify-center p-5 border-2 border-dashed rounded-xl cursor-pointer transition-all group ${
-          isExtracting || isUploadingPhoto
-            ? 'border-amber-400 bg-amber-500/10 animate-pulse'
-            : 'border-amber-500/30 hover:border-amber-400/70 hover:bg-amber-500/5'
-        }`}>
-          <input
-            type="file"
-            accept="image/*,application/pdf"
-            onChange={handleFileUpload}
-            disabled={isUploadingPhoto || isExtracting}
-            className="hidden"
-          />
+        {/* Dual Upload Options: Direct Camera & Gallery / PDF */}
+        <div className="space-y-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            {/* Direct Camera Button (Opens phone camera directly) */}
+            <label className={`flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-amber-500/20 to-amber-600/10 hover:from-amber-500/30 hover:to-amber-600/20 active:scale-[0.99] border border-amber-500/40 hover:border-amber-400 rounded-xl cursor-pointer transition-all text-amber-300 font-bold text-xs shadow-sm ${
+              isExtracting || isUploadingPhoto ? 'opacity-50 pointer-events-none' : ''
+            }`}>
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handleFileUpload}
+                disabled={isUploadingPhoto || isExtracting}
+                className="hidden"
+              />
+              <Camera className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>Take Photo (Camera)</span>
+            </label>
+
+            {/* Gallery / PDF Document Button */}
+            <label className={`flex items-center justify-center gap-2 px-4 py-3 bg-slate-900 hover:bg-slate-800 active:scale-[0.99] border border-slate-700 hover:border-slate-600 rounded-xl cursor-pointer transition-all text-slate-200 font-bold text-xs shadow-sm ${
+              isExtracting || isUploadingPhoto ? 'opacity-50 pointer-events-none' : ''
+            }`}>
+              <input
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={handleFileUpload}
+                disabled={isUploadingPhoto || isExtracting}
+                className="hidden"
+              />
+              <ImageIcon className="w-4 h-4 text-slate-300 shrink-0" />
+              <span>Choose from Gallery / PDF</span>
+            </label>
+          </div>
+
+          {/* Active Progress or Desktop Dropzone */}
           {isExtracting || isUploadingPhoto ? (
-            <div className="flex flex-col items-center gap-2.5 py-2 text-center">
+            <div className="flex flex-col items-center gap-2 p-3.5 border border-amber-500/40 bg-amber-500/10 rounded-xl text-center animate-pulse">
               <div className="flex items-center gap-2">
-                <Sparkles className="w-6 h-6 text-amber-400 animate-pulse" />
-                <Loader2 className="w-7 h-7 text-amber-400 animate-spin" />
+                <Sparkles className="w-5 h-5 text-amber-400 animate-spin" />
+                <Loader2 className="w-6 h-6 text-amber-400 animate-spin" />
               </div>
               <span className="text-xs font-bold text-amber-300 tracking-wide">
-                AI Reading Document & Auto-filling Fields...
+                {uploadStatusText || 'AI Reading Document & Auto-filling Fields...'}
               </span>
               <span className="text-[11px] text-slate-400">
                 Extracting Customer Name, Address, RGP No, Date, Vehicle No, and Item Table
               </span>
             </div>
           ) : (
-            <div className="flex flex-col sm:flex-row items-center gap-3 py-1">
-              <div className="p-3 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 group-hover:scale-110 group-hover:bg-amber-500/20 transition-all shrink-0">
-                <Upload className="w-6 h-6" />
-              </div>
-              <div className="text-center sm:text-left">
-                <div className="text-xs font-bold text-amber-300 group-hover:text-amber-200 transition-colors">
-                  Click or drag RGP / Gate Pass document (Image or PDF) here
-                </div>
-                <div className="text-[11px] text-slate-400 mt-0.5">
-                  🤖 AI will read your document and auto-fill all form fields and items instantly
-                </div>
-              </div>
-            </div>
+            <label className="hidden md:flex flex-col items-center justify-center p-3 border border-dashed border-amber-500/20 hover:border-amber-400/50 hover:bg-amber-500/5 rounded-xl cursor-pointer transition-all text-center">
+              <input
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+              <span className="text-[11px] text-slate-400">Or drag and drop document file here</span>
+            </label>
           )}
-        </label>
+        </div>
 
         {/* Visual Document Preview Card (Stored in Database & Sheet) */}
         {data.rgpPhotoUrl && (

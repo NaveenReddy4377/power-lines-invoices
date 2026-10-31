@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { QuotationData, Client, InventoryItem } from '@/types';
-import { Plus, Trash2, Building, ScanLine, FileText, List, IndianRupee, Sparkles, Loader2, History, Upload, AlertCircle, CheckCircle2, ExternalLink, Copy, Image as ImageIcon } from 'lucide-react';
+import { Plus, Trash2, Building, ScanLine, FileText, List, IndianRupee, Sparkles, Loader2, History, Upload, AlertCircle, CheckCircle2, ExternalLink, Copy, Image as ImageIcon, Camera } from 'lucide-react';
+import { prepareFileForUpload } from '@/utils/imageCompressor';
 import { getClients, getInventory, getPreviousDescriptions, DescriptionSuggestion, uploadRGPPhoto, extractQuotationFromRGP, extractQuotationFromRGPUrl } from '@/app/actions';
 import { getMotorSuggestions, findMotorPrice, approvedCompanies } from '@/data/motor-rates';
 
@@ -56,6 +57,7 @@ export default function QuotationForm({ data, onChange, onLoad, isLoading }: Pro
   const [extractError, setExtractError] = useState<string | null>(null);
   const [extractSuccess, setExtractSuccess] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
+  const [uploadStatusText, setUploadStatusText] = useState<string>('');
   const [extractedCount, setExtractedCount] = useState<number | null>(null);
   const [copiedUrl, setCopiedUrl] = useState(false);
 
@@ -336,48 +338,67 @@ export default function QuotationForm({ data, onChange, onLoad, isLoading }: Pro
           </div>
         )}
 
-        {/* Drag & Drop Upload Zone */}
-        <label className={`block border-2 border-dashed rounded-xl p-4 transition-all cursor-pointer group ${
-          isExtractingRGP || isUploadingRGP
-            ? 'border-purple-500 bg-purple-500/10 cursor-wait'
-            : 'border-purple-500/40 hover:border-purple-400 hover:bg-purple-500/5 bg-slate-950/60'
-        }`}>
-          <input
-            type="file"
-            accept="image/*,application/pdf"
-            onChange={handleRGPFileUpload}
-            disabled={isUploadingRGP || isExtractingRGP}
-            className="hidden"
-          />
+        {/* Dual Upload Options: Direct Camera & Gallery / PDF */}
+        <div className="space-y-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            {/* Direct Camera Button */}
+            <label className={`flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-purple-500/20 to-indigo-600/10 hover:from-purple-500/30 hover:to-indigo-600/20 active:scale-[0.99] border border-purple-500/40 hover:border-purple-400 rounded-xl cursor-pointer transition-all text-purple-300 font-bold text-xs shadow-sm ${
+              isExtractingRGP || isUploadingRGP ? 'opacity-50 pointer-events-none' : ''
+            }`}>
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handleRGPFileUpload}
+                disabled={isUploadingRGP || isExtractingRGP}
+                className="hidden"
+              />
+              <Camera className="w-4 h-4 text-purple-400 shrink-0" />
+              <span>Take Photo (Camera)</span>
+            </label>
+
+            {/* Gallery / PDF Button */}
+            <label className={`flex items-center justify-center gap-2 px-4 py-3 bg-slate-900 hover:bg-slate-800 active:scale-[0.99] border border-slate-700 hover:border-slate-600 rounded-xl cursor-pointer transition-all text-slate-200 font-bold text-xs shadow-sm ${
+              isExtractingRGP || isUploadingRGP ? 'opacity-50 pointer-events-none' : ''
+            }`}>
+              <input
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={handleRGPFileUpload}
+                disabled={isUploadingRGP || isExtractingRGP}
+                className="hidden"
+              />
+              <ImageIcon className="w-4 h-4 text-slate-300 shrink-0" />
+              <span>Choose from Gallery / PDF</span>
+            </label>
+          </div>
+
+          {/* Progress / Dropzone */}
           {isExtractingRGP || isUploadingRGP ? (
-            <div className="flex flex-col items-center gap-2.5 py-2 text-center">
+            <div className="flex flex-col items-center gap-2 p-3.5 border border-purple-500/40 bg-purple-500/10 rounded-xl text-center animate-pulse">
               <div className="flex items-center gap-2">
-                <Sparkles className="w-6 h-6 text-purple-400 animate-pulse" />
-                <Loader2 className="w-7 h-7 text-purple-400 animate-spin" />
+                <Sparkles className="w-5 h-5 text-purple-400 animate-spin" />
+                <Loader2 className="w-6 h-6 text-purple-400 animate-spin" />
               </div>
               <span className="text-xs font-bold text-purple-300 tracking-wide">
-                AI Reading RGP Copy & Adding Rewinding Charges...
+                {uploadStatusText || 'AI Reading RGP Copy & Adding Rewinding Charges...'}
               </span>
               <span className="text-[11px] text-slate-400">
                 Extracting Client Name, Address, RGP No, Date, and converting motor lines into Rewinding Charges
               </span>
             </div>
           ) : (
-            <div className="flex flex-col sm:flex-row items-center gap-3 py-1">
-              <div className="p-3 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-400 group-hover:scale-110 group-hover:bg-purple-500/20 transition-all shrink-0">
-                <Upload className="w-6 h-6" />
-              </div>
-              <div className="text-center sm:text-left">
-                <div className="text-xs font-bold text-purple-300 group-hover:text-purple-200 transition-colors">
-                  Click or drag RGP / Gate Pass copy (Image or PDF) here
-                </div>
-                <div className="text-[11px] text-slate-400 mt-0.5">
-                  🤖 AI extracts client, RGP No, date, and automatically formats motor descriptions with rewinding charges & HSN 9987
-                </div>
-              </div>
-            </div>
+            <label className="hidden md:flex flex-col items-center justify-center p-3 border border-dashed border-purple-500/20 hover:border-purple-400/50 hover:bg-purple-500/5 rounded-xl cursor-pointer transition-all text-center">
+              <input
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={handleRGPFileUpload}
+                className="hidden"
+              />
+              <span className="text-[11px] text-slate-400">Or drag and drop RGP copy file here</span>
+            </label>
           )}
-        </label>
+        </div>
 
         {/* Document Preview Card if attached */}
         {data.rgpPhotoUrl && (
