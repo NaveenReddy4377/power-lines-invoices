@@ -331,6 +331,20 @@ function NewQuotation() {
         iconType="quotation"
       />
 
+      {/* Overwrite Confirmation Modal */}
+      <OverwriteConfirmModal
+        isOpen={overwriteModal.isOpen}
+        onClose={() => setOverwriteModal(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={() => {
+          setOverwriteModal(prev => ({ ...prev, isOpen: false }));
+          handleSaveAndProcess(true);
+        }}
+        docType="Quotation"
+        docNumber={data.quotationNo}
+        existingRecordInfo={overwriteModal.existingRecord}
+        isSaving={isSaving}
+      />
+
       {/* Failure Popup for Quotation */}
       <FailureModal
         isOpen={failureModal.isOpen}

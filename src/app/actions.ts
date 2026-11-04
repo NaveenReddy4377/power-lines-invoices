@@ -589,8 +589,10 @@ export async function saveQuotation(data: QuotationData, allowOverwrite: boolean
     let sheet = await getOrCreateSheet(doc, 'Quotations');
     const rows = await sheet.getRows();
     let targetRow = null;
+    const cleanQuotationNo = (data.quotationNo || '').trim().toUpperCase();
     for (const row of rows) {
-      if (row.get('Quotation No') === rowObj['Quotation No']) {
+      const existingNo = (row.get('Quotation No') || '').toString().trim().toUpperCase();
+      if (existingNo && existingNo === cleanQuotationNo) {
         targetRow = row;
         break;
       }
@@ -638,6 +640,14 @@ export async function saveQuotation(data: QuotationData, allowOverwrite: boolean
     if (sheetResult.status === 'rejected') {
       console.error('Google Sheets quotation save error after retry:', sheetResult.reason);
       const isSupaSaved = supaResult.status === 'fulfilled' && supaResult.value.success;
+      if (isSupaSaved) {
+        return {
+          success: true,
+          offline: true,
+          note: 'Saved to Supabase database (Google Sheets write pending)',
+          grandTotal
+        };
+      }
       return {
         success: false,
         savedToSupabase: isSupaSaved,
