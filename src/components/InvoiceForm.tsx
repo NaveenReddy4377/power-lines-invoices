@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { InvoiceData, Client, InventoryItem } from '@/types';
+import { InvoiceData, Client, InventoryItem, VENDOR_GSTIN_OPTIONS, DEFAULT_VENDOR_GSTIN } from '@/types';
 import { Plus, Trash2, Building, ScanLine, FileText, IndianRupee, Zap, Sparkles, Loader2, History, Upload, AlertCircle, CheckCircle2, ExternalLink, Copy, Image as ImageIcon, Camera } from 'lucide-react';
 import { prepareFileForUpload } from '@/utils/imageCompressor';
 import OverwriteConfirmModal from '@/components/OverwriteConfirmModal';
@@ -490,9 +490,58 @@ export default function InvoiceForm({ data, onChange, onLoad, isLoading }: Props
       
       {/* Header Info */}
       <div className="space-y-4">
-        <h2 className="text-sm font-semibold tracking-wider text-slate-400 uppercase flex items-center gap-2">
-          <FileText className="w-4 h-4 text-emerald-400" /> Document Info
-        </h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold tracking-wider text-slate-400 uppercase flex items-center gap-2">
+            <FileText className="w-4 h-4 text-emerald-400" /> Document Info
+          </h2>
+          {(data.vendorGstin && data.vendorGstin !== DEFAULT_VENDOR_GSTIN) && (
+            <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full font-semibold">
+              Old GST Active
+            </span>
+          )}
+        </div>
+
+        {/* Billed By GSTIN Selector */}
+        <div className="bg-slate-900/80 p-3 rounded-lg border border-slate-800 space-y-2">
+          <label className="block text-xs font-medium text-slate-300">
+            Billed By (Our GSTIN):
+          </label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {VENDOR_GSTIN_OPTIONS.map((opt) => {
+              const isSelected = (data.vendorGstin || DEFAULT_VENDOR_GSTIN) === opt.gstin;
+              return (
+                <button
+                  key={opt.gstin}
+                  type="button"
+                  onClick={() => {
+                    onChange({
+                      ...data,
+                      vendorGstin: opt.gstin,
+                      vendorPan: opt.pan,
+                    });
+                  }}
+                  className={`text-left p-2.5 rounded-md border text-xs transition-all flex flex-col gap-0.5 cursor-pointer ${
+                    isSelected
+                      ? 'bg-emerald-500/15 border-emerald-500/60 text-white ring-1 ring-emerald-500/40'
+                      : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center justify-between font-semibold">
+                    <span className={isSelected ? 'text-emerald-400 font-bold' : 'text-slate-300'}>{opt.label}</span>
+                    {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+                  </div>
+                  <div className="text-[11px] font-mono text-slate-300 mt-0.5">
+                    GSTIN: <span className="font-bold text-white">{opt.gstin}</span>
+                  </div>
+                  <div className="text-[10px] text-slate-400">
+                    PAN: <span className="font-mono text-slate-300">{opt.pan}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-medium text-slate-400 mb-1">Invoice No</label>

@@ -78,7 +78,7 @@ function buildInvoiceHTML(data: Record<string, any>, message: string): string {
           <td>
             <div style="font-size:22px;font-weight:800;letter-spacing:-0.5px;">POWER LINES ELECTRICAL WORKS</div>
             <div style="font-size:12px;color:#94a3b8;margin-top:4px;">FLAT NO.13-178, NEAR BALAJI HOTEL, SANGAREDDY, TELANGANA-502325</div>
-            <div style="font-size:12px;color:#94a3b8;margin-top:2px;">GSTIN: 36PBJPK1510A1ZZ &nbsp;|&nbsp; Mobile: 9676774370</div>
+            <div style="font-size:12px;color:#94a3b8;margin-top:2px;">GSTIN: ${data.vendorGstin || '36PBJPK1510A1ZZ'} &nbsp;|&nbsp; Mobile: 9676774370</div>
           </td>
           <td align="right" valign="top">
             <div style="background:rgba(255,255,255,0.12);border-radius:8px;padding:12px 20px;display:inline-block;text-align:center;">
@@ -210,7 +210,7 @@ function buildQuotationHTML(data: Record<string, any>, message: string): string 
           <td>
             <div style="font-size:22px;font-weight:800;letter-spacing:-0.5px;">POWER LINES ELECTRICAL WORKS</div>
             <div style="font-size:12px;color:#c4b5fd;margin-top:4px;">FLAT NO.13-178, NEAR BALAJI HOTEL, SANGAREDDY, TELANGANA-502325</div>
-            <div style="font-size:12px;color:#c4b5fd;margin-top:2px;">GSTIN: 36PBJPK1510A1ZZ &nbsp;|&nbsp; Mobile: 9676774370</div>
+            <div style="font-size:12px;color:#c4b5fd;margin-top:2px;">GSTIN: ${(data as any).vendorGstin || '36PBJPK1510A1ZZ'} &nbsp;|&nbsp; Mobile: 9676774370</div>
           </td>
           <td align="right" valign="top">
             <div style="background:rgba(255,255,255,0.12);border-radius:8px;padding:12px 20px;display:inline-block;text-align:center;">

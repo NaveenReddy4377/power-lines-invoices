@@ -48,9 +48,9 @@ export default function MotorQuotationPreview({ data }: MotorQuotationPreviewPro
             </div>
             <div className="p-3 border-l border-black bg-slate-50/50 w-1/3">
               <div className="grid grid-cols-[50px_1fr] gap-x-1 text-[10px]">
-                <span className="font-medium text-slate-500">GSTIN</span><span className="font-bold">36PBJPK1510A1ZZ</span>
+                <span className="font-medium text-slate-500">GSTIN</span><span className="font-bold">{(data as any).vendorGstin || '36PBJPK1510A1ZZ'}</span>
                 <span className="font-medium text-slate-500">Mobile</span><span className="font-bold">9676774370</span>
-                <span className="font-medium text-slate-500">PAN</span><span className="font-bold">PBJPK1510A</span>
+                <span className="font-medium text-slate-500">PAN</span><span className="font-bold">{(data as any).vendorPan || ((data as any).vendorGstin ? (data as any).vendorGstin.slice(2, 12) : 'PBJPK1510A')}</span>
                 <span className="font-medium text-slate-500 leading-tight pt-0.5">Email</span><span className="break-all leading-tight font-medium">gsaireddy.powerlineselectrical@gmail.com</span>
               </div>
             </div>

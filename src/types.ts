@@ -9,12 +9,34 @@ export interface InvoiceItem {
   discountType: 'percentage' | 'flat';
 }
 
+export const VENDOR_GSTIN_OPTIONS = [
+  {
+    id: 'current',
+    label: 'Current GSTIN',
+    gstin: '36PBJPK1510A1ZZ',
+    pan: 'PBJPK1510A',
+    description: 'Current Active GSTIN'
+  },
+  {
+    id: 'old',
+    label: 'Old GSTIN',
+    gstin: '36AIOPG2475K1ZV',
+    pan: 'AIOPG2475K',
+    description: 'Legacy / Old GSTIN'
+  },
+] as const;
+
+export const DEFAULT_VENDOR_GSTIN = '36PBJPK1510A1ZZ';
+export const DEFAULT_VENDOR_PAN = 'PBJPK1510A';
+
 export interface InvoiceData {
   invoiceNo: string;
   invoiceDate: string;
   dueDate: string;
   poNumber: string;
   poDate: string;
+  vendorGstin?: string;
+  vendorPan?: string;
   
   billTo: {
     name: string;
@@ -54,6 +76,8 @@ export const initialInvoiceData: InvoiceData = {
   poNumber: '',
   poDate: '',
   poCopyUrl: '',
+  vendorGstin: DEFAULT_VENDOR_GSTIN,
+  vendorPan: DEFAULT_VENDOR_PAN,
   billTo: {
     name: '',
     address: '',
@@ -101,6 +125,8 @@ export interface QuotationData {
   rgpNumber: string;
   rgpDate: string;
   rgpPhotoUrl?: string;
+  vendorGstin?: string;
+  vendorPan?: string;
 
   billTo: {
     name: string;
@@ -128,6 +154,8 @@ export const initialQuotationData: QuotationData = {
   rgpNumber: '',
   rgpDate: '',
   rgpPhotoUrl: '',
+  vendorGstin: DEFAULT_VENDOR_GSTIN,
+  vendorPan: DEFAULT_VENDOR_PAN,
   billTo: {
     name: '',
     address: '',

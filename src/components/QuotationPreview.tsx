@@ -51,9 +51,9 @@ export default function QuotationPreview({ data }: { data: QuotationData }) {
                   </div>
                   <div className="p-3 border-l border-black bg-slate-50/50 w-1/3">
                     <div className="grid grid-cols-[50px_1fr] gap-x-1 text-[10px]">
-                      <span className="font-medium">GSTIN</span><span>36PBJPK1510A1ZZ</span>
+                      <span className="font-medium">GSTIN</span><span>{data.vendorGstin || '36PBJPK1510A1ZZ'}</span>
                       <span className="font-medium">Mobile</span><span>9676774370</span>
-                      <span className="font-medium">PAN</span><span>PBJPK1510A</span>
+                      <span className="font-medium">PAN</span><span>{data.vendorPan || (data.vendorGstin ? data.vendorGstin.slice(2, 12) : 'PBJPK1510A')}</span>
                       <span className="font-medium">Email</span><span className="break-all leading-tight">gsaireddy.powerlineselectrical@gmail.com</span>
                     </div>
                   </div>
