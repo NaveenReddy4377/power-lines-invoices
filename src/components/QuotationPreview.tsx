@@ -54,7 +54,7 @@ export default function QuotationPreview({ data }: { data: QuotationData }) {
                       <span className="font-medium">GSTIN</span><span>{data.vendorGstin || '36PBJPK1510A1ZZ'}</span>
                       <span className="font-medium">Mobile</span><span>9676774370</span>
                       <span className="font-medium">PAN</span><span>{data.vendorPan || (data.vendorGstin ? data.vendorGstin.slice(2, 12) : 'PBJPK1510A')}</span>
-                      <span className="font-medium">Email</span><span className="break-all leading-tight">gsaireddy.powerlineselectrical@gmail.com</span>
+                      <span className="font-medium">Email</span><span className="break-all leading-tight">gsaireddy@powerlineselectricalwork.com</span>
                     </div>
                   </div>
                 </div>

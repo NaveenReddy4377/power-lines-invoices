@@ -161,7 +161,7 @@ function buildInvoiceHTML(data: Record<string, any>, message: string): string {
     <!-- Footer -->
     <div style="background:#0f172a;padding:20px 40px;text-align:center;color:#64748b;font-size:12px;">
       <div style="color:#94a3b8;">Thank you for your business! — <strong style="color:#34d399;">POWER LINES ELECTRICAL WORKS</strong></div>
-      <div style="margin-top:6px;">gsaireddy.powerlineselectrical@gmail.com &nbsp;|&nbsp; +91 9676774370</div>
+      <div style="margin-top:6px;">gsaireddy@powerlineselectricalwork.com &nbsp;|&nbsp; +91 9676774370</div>
     </div>
   </div>
 </body>
@@ -291,7 +291,7 @@ function buildQuotationHTML(data: Record<string, any>, message: string): string 
     <!-- Footer -->
     <div style="background:#1e1b4b;padding:20px 40px;text-align:center;color:#c4b5fd;font-size:12px;">
       <div>Thank you for considering our services! — <strong style="color:#e879f9;">POWER LINES ELECTRICAL WORKS</strong></div>
-      <div style="margin-top:6px;">gsaireddy.powerlineselectrical@gmail.com &nbsp;|&nbsp; +91 9676774370</div>
+      <div style="margin-top:6px;">gsaireddy@powerlineselectricalwork.com &nbsp;|&nbsp; +91 9676774370</div>
     </div>
   </div>
 </body>
