@@ -276,7 +276,7 @@ export interface DeliveryChallanData {
 export const initialDeliveryChallanData: DeliveryChallanData = {
   dcNo: 'PLEW-DC-00001',
   dcDate: new Date().toISOString().split('T')[0],
-  challanType: 'Returnable',
+  challanType: 'Regular',
   customerName: '',
   customerAddress: '',
   customerGstin: '',

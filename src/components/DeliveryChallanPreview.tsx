@@ -7,6 +7,11 @@ interface DeliveryChallanPreviewProps {
 }
 
 export default function DeliveryChallanPreview({ data }: DeliveryChallanPreviewProps) {
+  const totalQuantity = (data.items || []).reduce(
+    (sum, item) => sum + (Number(item.quantity) || 0),
+    0
+  );
+
   return (
     <div id="pdf-wrapper" className="w-full flex justify-center">
       <div
@@ -21,7 +26,7 @@ export default function DeliveryChallanPreview({ data }: DeliveryChallanPreviewP
           <div className="flex justify-between items-start border-b-2 border-slate-900 pb-3">
             <div>
               <span className="inline-block bg-slate-900 text-white text-[11px] font-black tracking-widest px-3 py-1 uppercase rounded-sm">
-                DELIVERY CHALLAN {data.challanType ? `(${data.challanType.toUpperCase()})` : ''}
+                DELIVERY CHALLAN
               </span>
             </div>
             <div className="text-right text-[11px] font-bold text-slate-800 leading-tight">
@@ -81,26 +86,22 @@ export default function DeliveryChallanPreview({ data }: DeliveryChallanPreviewP
               </div>
             </div>
 
-            <div className="grid grid-cols-12 gap-2 text-[11px] pt-1 border-t border-slate-200">
-              <div className="col-span-4 flex items-center gap-1.5">
-                <span className="font-bold text-slate-900">Quotation Raised:</span>
-                <span className={`font-bold px-2 py-0.5 rounded text-[10px] ${data.quotationRaised === 'Yes' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'}`}>
-                  {data.quotationRaised || 'No'}
-                </span>
+            {(data.vehicleNo || data.modeOfTransport) && (
+              <div className="grid grid-cols-12 gap-2 text-[11px] pt-1 border-t border-slate-200">
+                {data.vehicleNo && (
+                  <div className="col-span-6 flex items-center gap-1.5">
+                    <span className="font-bold text-slate-900">Vehicle No:</span>
+                    <span className="font-bold uppercase text-slate-900">{data.vehicleNo}</span>
+                  </div>
+                )}
+                {data.modeOfTransport && (
+                  <div className="col-span-6 flex items-center gap-1.5">
+                    <span className="font-bold text-slate-900">Transport:</span>
+                    <span className="font-semibold">{data.modeOfTransport}</span>
+                  </div>
+                )}
               </div>
-              {data.vehicleNo && (
-                <div className="col-span-4 flex items-center gap-1.5">
-                  <span className="font-bold text-slate-900">Vehicle No:</span>
-                  <span className="font-bold uppercase text-slate-900">{data.vehicleNo}</span>
-                </div>
-              )}
-              {data.modeOfTransport && (
-                <div className="col-span-4 flex items-center gap-1.5">
-                  <span className="font-bold text-slate-900">Transport:</span>
-                  <span className="font-semibold">{data.modeOfTransport}</span>
-                </div>
-              )}
-            </div>
+            )}
           </div>
 
           {/* Table of Items */}
@@ -135,7 +136,7 @@ export default function DeliveryChallanPreview({ data }: DeliveryChallanPreviewP
                 )}
 
                 {/* Pad empty space to match physical challan height */}
-                {Array.from({ length: Math.max(0, 6 - (data.items?.length || 0)) }).map((_, i) => (
+                {Array.from({ length: Math.max(0, 5 - (data.items?.length || 0)) }).map((_, i) => (
                   <tr key={`empty-${i}`} className="h-9">
                     <td className="border-r border-slate-300" />
                     <td className="border-r border-slate-300" />
@@ -145,6 +146,16 @@ export default function DeliveryChallanPreview({ data }: DeliveryChallanPreviewP
                   </tr>
                 ))}
               </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-slate-900 bg-slate-100/90 font-black text-xs">
+                  <td colSpan={4} className="py-2.5 px-3 border-r border-slate-300 text-right uppercase tracking-wider text-slate-800 font-bold">
+                    Total Quantity
+                  </td>
+                  <td className="py-2.5 px-3 text-center font-black text-sm text-slate-950 bg-slate-200/60">
+                    {totalQuantity}
+                  </td>
+                </tr>
+              </tfoot>
             </table>
           </div>
 
