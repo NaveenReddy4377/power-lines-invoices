@@ -189,14 +189,17 @@ export default function CashBillForm({ data, onChange, onLoad, isLoading }: Prop
               Payment Mode
             </label>
             <select
-              value={data.paymentMode}
+              value={data.paymentMode || ''}
               onChange={(e) => onChange({ ...data, paymentMode: e.target.value as any })}
               className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs font-semibold text-emerald-400 focus:outline-hidden focus:border-emerald-500"
             >
+              <option value="">-- No Mode (Pending) --</option>
               <option value="Cash">💵 Cash</option>
-              <option value="UPI">📱 UPI / GPay / PhonePe</option>
-              <option value="Bank Transfer">🏦 Bank Transfer (NEFT/IMPS)</option>
+              <option value="GPay">📱 GPay / PhonePe / UPI</option>
+              <option value="NEFT">🏦 NEFT / RTGS / Bank Transfer</option>
               <option value="Cheque">📜 Cheque</option>
+              {data.paymentMode === 'UPI' && <option value="UPI">📱 UPI</option>}
+              {data.paymentMode === 'Bank Transfer' && <option value="Bank Transfer">🏦 Bank Transfer</option>}
             </select>
           </div>
 
@@ -247,16 +250,26 @@ export default function CashBillForm({ data, onChange, onLoad, isLoading }: Prop
             />
           </div>
 
-          {data.paymentMode !== 'Cash' ? (
+          {data.paymentMode && data.paymentMode !== 'Cash' ? (
             <div>
               <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                Transaction / UTR / Cheque No.
+                {data.paymentMode === 'Cheque'
+                  ? 'Cheque No.'
+                  : data.paymentMode === 'GPay' || data.paymentMode === 'UPI'
+                  ? 'UPI / Ref / Txn ID'
+                  : 'Transaction / UTR No.'}
               </label>
               <input
                 type="text"
                 value={data.transactionRef || ''}
                 onChange={(e) => onChange({ ...data, transactionRef: e.target.value })}
-                placeholder="e.g. UTR 42891924192 / Chq #48102"
+                placeholder={
+                  data.paymentMode === 'Cheque'
+                    ? 'e.g. Chq #481028'
+                    : data.paymentMode === 'GPay' || data.paymentMode === 'UPI'
+                    ? 'e.g. UPI Ref / Txn ID'
+                    : 'e.g. UTR 42891924192'
+                }
                 className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs font-mono text-slate-200 focus:outline-hidden focus:border-amber-500"
               />
             </div>

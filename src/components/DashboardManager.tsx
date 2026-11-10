@@ -600,9 +600,9 @@ export default function DashboardManager({ invoices, quotations, deliveryChallan
         'Date': cb.date,
         'Customer Name': cb.customer,
         'Phone': cb.phone || '',
-        'Payment Mode': cb.paymentMode || 'Cash',
+        'Payment Mode': cb.paymentMode || '',
         'Amount (₹)': Number(cb.amount || 0),
-        'Status': cb.status || 'Paid'
+        'Status': cb.status || 'Pending'
       }));
 
       const totalAmount = cashBills.reduce((sum, cb) => sum + Number(cb.amount || 0), 0);
@@ -671,7 +671,7 @@ export default function DashboardManager({ invoices, quotations, deliveryChallan
           'Date': data.billDate || '',
           'Customer Name': data.customerName || '',
           'Phone': data.phone || '',
-          'Payment Mode': data.paymentMode || 'Cash',
+          'Payment Mode': data.paymentMode || '',
           'Item S.No': idx + 1,
           'Description': item.description || '',
           'Quantity': Number(item.quantity || 1),
@@ -1201,9 +1201,15 @@ export default function DashboardManager({ invoices, quotations, deliveryChallan
                       {cb.phone || '—'}
                     </td>
                     <td className="px-6 py-3.5 whitespace-nowrap text-center">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                        {cb.paymentMode || 'Cash'}
-                      </span>
+                      {cb.paymentMode ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                          {cb.paymentMode}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 text-xs italic">
+                          None
+                        </span>
+                      )}
                     </td>
                     <td className="px-6 py-3.5 text-right font-bold text-slate-900 whitespace-nowrap">
                       ₹{Number(cb.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}

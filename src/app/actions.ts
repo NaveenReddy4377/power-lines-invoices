@@ -2066,11 +2066,11 @@ export async function saveCashBillToSpreadsheet(data: CashBillData, allowOverwri
       'Date': data.billDate,
       'Customer Name': data.customerName,
       'Phone': data.customerPhone || '',
-      'Payment Mode': data.paymentMode || 'Cash',
+      'Payment Mode': data.paymentMode || '',
       'Subtotal': subtotal.toFixed(2),
       'Discount': Number(data.discount || 0).toFixed(2),
       'Total Amount': totalAmount.toFixed(2),
-      'Status': data.paymentStatus || data.status || 'Paid',
+      'Status': data.paymentStatus || data.status || 'Pending',
       'RawData': JSON.stringify(data),
     };
 
@@ -2158,8 +2158,8 @@ export async function loadCashBill(billNo: string) {
         const reconstructed: CashBillData = {
           billNo: rows[i].get('Bill No') || cleanNo,
           billDate: rows[i].get('Date') || new Date().toISOString().split('T')[0],
-          paymentMode: (rows[i].get('Payment Mode') || 'Cash') as any,
-          paymentStatus: (rows[i].get('Status') || 'Paid') as any,
+          paymentMode: (rows[i].get('Payment Mode') || '') as any,
+          paymentStatus: (rows[i].get('Status') || 'Pending') as any,
           customerName: rows[i].get('Customer Name') || '',
           customerPhone: rows[i].get('Phone') || '',
           customerAddress: '',
@@ -2218,9 +2218,9 @@ export async function getCashBillList() {
             date: r.get('Date') || '',
             customer: r.get('Customer Name') || '',
             phone: r.get('Phone') || '',
-            paymentMode: r.get('Payment Mode') || 'Cash',
+            paymentMode: r.get('Payment Mode') || '',
             amount: parseFloat(r.get('Total Amount') || '0'),
-            status: r.get('Status') || 'Paid',
+            status: r.get('Status') || 'Pending',
             rawData
           });
         }

@@ -317,7 +317,7 @@ export interface CashBillItem {
 export interface CashBillData {
   billNo: string;
   billDate: string;
-  paymentMode: 'Cash' | 'UPI' | 'Bank Transfer' | 'Cheque';
+  paymentMode: 'Cash' | 'GPay' | 'NEFT' | 'Cheque' | 'UPI' | 'Bank Transfer' | '' | string;
   paymentStatus: 'Paid' | 'Pending';
   transactionRef?: string;
   customerName: string;
@@ -336,8 +336,8 @@ export interface CashBillData {
 export const initialCashBillData: CashBillData = {
   billNo: 'PLEW-CB-00001',
   billDate: new Date().toISOString().split('T')[0],
-  paymentMode: 'Cash',
-  paymentStatus: 'Paid',
+  paymentMode: '',
+  paymentStatus: 'Pending',
   transactionRef: '',
   customerName: '',
   customerPhone: '',
@@ -358,7 +358,7 @@ export const initialCashBillData: CashBillData = {
   ],
   discount: 0,
   notes: '1. Goods once sold cannot be returned without bill.\n2. Warranty on motor rewinding & repairs as per standard terms.\n3. Subject to Sangareddy/Hyderabad jurisdiction.',
-  status: 'Paid'
+  status: 'Pending'
 };
 
 // ─── Pending Bills & Follow-ups Module ─────────────────────────────────────────

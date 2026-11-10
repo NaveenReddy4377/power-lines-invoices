@@ -247,8 +247,8 @@ export async function syncCashBillToSupabase(data: CashBillData): Promise<{ succ
           bill_date: normalizeDateForSupabase(data.billDate),
           customer_name: data.customerName || '',
           customer_phone: data.customerPhone || '',
-          payment_mode: data.paymentMode || 'Cash',
-          payment_status: data.paymentStatus || data.status || 'Paid',
+          payment_mode: data.paymentMode || '',
+          payment_status: data.paymentStatus || data.status || 'Pending',
           total_amount: totalAmount,
           raw_data: data,
           updated_at: new Date().toISOString(),
@@ -297,9 +297,9 @@ export async function fetchCashBillsFromSupabase(): Promise<any[] | null> {
       date: row.bill_date || '',
       customer: row.customer_name || '',
       phone: row.customer_phone || '',
-      paymentMode: row.payment_mode || 'Cash',
+      paymentMode: row.payment_mode || '',
       amount: Number(row.total_amount || 0),
-      status: row.payment_status || 'Paid',
+      status: row.payment_status || 'Pending',
       rawData: row.raw_data,
     }));
   } catch {
