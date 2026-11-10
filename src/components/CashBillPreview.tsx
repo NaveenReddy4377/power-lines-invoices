@@ -82,27 +82,12 @@ export default function CashBillPreview({ data }: Props) {
               </div>
             </div>
 
-            {/* Row 3: Address & Payment Details */}
+            {/* Row 3: Address */}
             <div className="grid grid-cols-12 gap-2">
-              <div className="col-span-6 flex items-start gap-1.5">
+              <div className="col-span-12 flex items-start gap-1.5">
                 <span className="font-bold text-slate-900 min-w-[70px]">Address:</span>
-                <span className="font-semibold text-slate-700 leading-tight">
-                  {data.customerAddress || '...........................................................................'}
-                </span>
-              </div>
-              <div className="col-span-3 flex items-center gap-1.5 justify-end">
-                <span className="font-bold text-slate-900">Mode:</span>
-                <span className="font-bold text-blue-900 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-xs text-[10px]">
-                  {data.paymentMode || 'Cash'}
-                </span>
-              </div>
-              <div className="col-span-3 flex items-center gap-1.5 justify-end">
-                <span className="font-bold text-slate-900">Status:</span>
-                <span className={`font-black px-2 py-0.5 rounded-xs text-[10px] uppercase tracking-wider ${data.paymentStatus === 'Paid'
-                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                    : 'bg-amber-100 text-amber-800 border border-amber-300'
-                  }`}>
-                  {data.paymentStatus || 'Paid'}
+                <span className="font-semibold text-slate-700 leading-tight flex-1">
+                  {data.customerAddress || '........................................................................................................................'}
                 </span>
               </div>
             </div>
